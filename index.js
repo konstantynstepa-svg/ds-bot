@@ -16,7 +16,7 @@ const fs = require("fs");
 /* ================= [ НАСТРОЙКИ ] ================= */
 const CONFIG = {
   COMMAND_CHANNEL_ID: "1480220429988659251", // Канал для команд
-  MAIN_LOG_CHANNEL: "1480227101905785113",   // ЕДИНЫЙ КАНАЛ ДЛЯ ВСЕХ ЛОГОВ (Баллы, Семья, Ранги)
+  MAIN_LOG_CHANNEL: "1480227101905785113",    // ЕДИНЫЙ КАНАЛ ДЛЯ ВСЕХ ЛОГОВ
   ROLE_ACCEPTED_ID: "1479557914086740104",   // Роль принятого
   ROLE_LEADER_ID: "1056945517835341936",     // Кто может юзать !give
   MEIN_ROLE_ID: "1480229891789160479",       // 3 ранг
@@ -52,7 +52,12 @@ const addPoints = (id, amt) => { db.points[id] = (db.points[id] || 0) + amt; sav
 const getPoints = (id) => db.points[id] || 0;
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMembers],
+  intents: [
+    GatewayIntentBits.Guilds, 
+    GatewayIntentBits.GuildMessages, 
+    GatewayIntentBits.MessageContent, 
+    GatewayIntentBits.GuildMembers
+  ],
 });
 
 client.once("ready", () => console.log(`🚀 Бот ${client.user.tag} готов! Логи -> ${CONFIG.MAIN_LOG_CHANNEL}`));
@@ -61,6 +66,7 @@ client.once("ready", () => console.log(`🚀 Бот ${client.user.tag} гото�
 client.on("messageCreate", async msg => {
   if (msg.author.bot) return;
 
+  // Команда выдачи баллов (только для Лидера)
   if (msg.content.startsWith("!give")) {
     if (!msg.member.roles.cache.has(CONFIG.ROLE_LEADER_ID)) return msg.reply("❌ Нет прав");
     const user = msg.mentions.users.first();
@@ -70,11 +76,14 @@ client.on("messageCreate", async msg => {
     return msg.reply(`✅ Выдано ${amount} 💎 игроку ${user}`);
   }
 
+  // Главное меню системы баллов
   if (msg.content === "!menu") {
     const embed = new EmbedBuilder()
       .setTitle("💎 СИСТЕМА БАЛЛОВ И ПОВЫШЕНИЯ")
-      .setDescription(`📜 **Цены:**\n🔹 2 ➔ 3 ранг: **${RANK_COSTS["3"]} 💎**\n🔹 3 ➔ 4 ранг: **${RANK_COSTS["4"]} 💎**`)
-      .setImage(CONFIG.IMAGE).setColor("#00d4ff");
+      .setDescription(`📜 **Цены на повышение:**\n🔹 2 ➔ 3 ранг: **${RANK_COSTS["3"]} 💎**\n🔹 3 ➔ 4 ранг: **${RANK_COSTS["4"]} 💎**`)
+      .setImage(CONFIG.IMAGE)
+      .setColor("#00d4ff");
+      
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId("earn_btn").setLabel("Заработать").setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId("balance_btn").setLabel("Баланс").setStyle(ButtonStyle.Secondary),
@@ -83,30 +92,46 @@ client.on("messageCreate", async msg => {
     msg.channel.send({ embeds: [embed], components: [row] });
   }
 
+  // Заявка в семью
   if (msg.content === "!заявка" && msg.channel.id === CONFIG.COMMAND_CHANNEL_ID) {
-    const embed = new EmbedBuilder().setTitle("📝 ЗАЯВКА В СЕМЬЮ").setImage(CONFIG.IMAGE).setColor("#ff0000");
+    const embed = new EmbedBuilder()
+        .setTitle("📝 ЗАЯВКА В СЕМЬЮ")
+        .setDescription("Нажми на кнопку ниже, чтобы заполнить анкету.")
+        .setImage(CONFIG.IMAGE)
+        .setColor("#ff0000");
     const btn = new ButtonBuilder().setCustomId("apply_start").setLabel("Подать заявку").setStyle(ButtonStyle.Danger);
     msg.channel.send({ embeds: [embed], components: [new ActionRowBuilder().addComponents(btn)] });
   }
 
+  // Команда AFK с картинкой (Обновлено)
   if (msg.content === "!afk") {
+    const afkEmbed = new EmbedBuilder()
+      .setTitle("💤 Управление статусом AFK / Отпуск")
+      .setDescription("Выберите нужное действие:\n\n" +
+                      "🏖 **Отпуск** — подать заявку (снимает все роли).\n" +
+                      "🌙 **AFK** — временный уход.\n" +
+                      "✅ **Выйти** — вернуть свои роли.")
+      .setImage(CONFIG.IMAGE)
+      .setColor("#2f3136");
+
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId("afk_vacation").setLabel("🏖 Отпуск").setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId("afk_on").setLabel("🌙 AFK").setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId("afk_off").setLabel("✅ Выйти").setStyle(ButtonStyle.Success)
     );
-    msg.channel.send({ content: "Управление AFK:", components: [row] });
+
+    msg.channel.send({ embeds: [afkEmbed], components: [row] });
   }
 });
 
 /* ================= [ ВЗАИМОДЕЙСТВИЯ ] ================= */
 client.on("interactionCreate", async i => {
   try {
-    // ЗАРАБОТОК БАЛЛОВ (МЕНЮ)
+    // 1. Выбор работы (Заработок)
     if (i.isButton() && i.customId === "earn_btn") {
       const selectMenu = new StringSelectMenuBuilder().setCustomId("earn_select").setPlaceholder("Что ты сделал?");
       EARN_OPTIONS.forEach(opt => selectMenu.addOptions(new StringSelectMenuOptionBuilder().setLabel(opt.label).setValue(opt.value)));
-      return i.reply({ content: "Выбери работу:", components: [new ActionRowBuilder().addComponents(selectMenu)], ephemeral: true });
+      return i.reply({ content: "Выбери выполненную работу из списка:", components: [new ActionRowBuilder().addComponents(selectMenu)], ephemeral: true });
     }
 
     if (i.isStringSelectMenu() && i.customId === "earn_select") {
@@ -119,7 +144,7 @@ client.on("interactionCreate", async i => {
       return i.showModal(modal);
     }
 
-    // ЛОГИ ОТЧЕТОВ НА БАЛЛЫ
+    // 2. Логирование отчетов на баллы
     if (i.isModalSubmit() && i.customId.startsWith("me_")) {
       const taskKey = i.customId.replace("me_", "");
       const task = EARN_OPTIONS.find(o => o.value === taskKey);
@@ -142,10 +167,10 @@ client.on("interactionCreate", async i => {
       );
 
       await log.send({ embeds: [emb], components: [row] });
-      return i.reply({ content: "Отчет отправлен!", ephemeral: true });
+      return i.reply({ content: "Ваш отчет успешно отправлен на проверку!", ephemeral: true });
     }
 
-    // ЗАЯВКА В СЕМЬЮ (ТВОИ ПОЛЯ)
+    // 3. Заявка в семью
     if (i.isButton() && i.customId === "apply_start") {
       const modal = new ModalBuilder().setCustomId("modal_apply").setTitle("Анкета в семью");
       modal.addComponents(
@@ -177,10 +202,10 @@ client.on("interactionCreate", async i => {
         new ButtonBuilder().setCustomId(`adm_no_${i.user.id}`).setLabel("❌ Отклонить").setStyle(ButtonStyle.Danger)
       );
       await log.send({ embeds: [embed], components: [row] });
-      return i.reply({ content: "✅ Заявка отправлена!", ephemeral: true });
+      return i.reply({ content: "✅ Ваша заявка отправлена!", ephemeral: true });
     }
 
-    // ПОВЫШЕНИЕ
+    // 4. Запрос повышения
     if (i.isButton() && i.customId === "rankup_btn") {
       const modal = new ModalBuilder().setCustomId("modal_rankup").setTitle("Повышение");
       modal.addComponents(
@@ -194,7 +219,7 @@ client.on("interactionCreate", async i => {
     if (i.isModalSubmit() && i.customId === "modal_rankup") {
       const rank = i.fields.getTextInputValue("r3");
       const cost = RANK_COSTS[rank];
-      if (!cost || getPoints(i.user.id) < cost) return i.reply({ content: "❌ Недостаточно баллов!", ephemeral: true });
+      if (!cost || getPoints(i.user.id) < cost) return i.reply({ content: `❌ Недостаточно баллов! Нужно: ${cost}`, ephemeral: true });
 
       const log = await i.guild.channels.fetch(CONFIG.MAIN_LOG_CHANNEL);
       const emb = new EmbedBuilder().setTitle("📈 ЗАПРОС ПОВЫШЕНИЯ").setColor("Green")
@@ -212,10 +237,10 @@ client.on("interactionCreate", async i => {
       );
 
       await log.send({ embeds: [emb], components: [row] });
-      return i.reply({ content: "Заявка отправлена!", ephemeral: true });
+      return i.reply({ content: "Заявка на повышение отправлена!", ephemeral: true });
     }
 
-    /* ================= [ АДМИН-КНОПКИ ] ================= */
+    // 5. Админ-кнопки (Одобрение/Отказ)
     if (i.isButton() && i.customId.startsWith("adm_")) {
       const [ , action, type, uid, val1, val2] = i.customId.split("_");
       const target = await i.guild.members.fetch(uid).catch(() => null);
@@ -243,7 +268,6 @@ client.on("interactionCreate", async i => {
           await target?.roles.add(CONFIG.ROLE_ACCEPTED_ID).catch(()=>{});
           if (target) target.send("🎉 Ты принят в семью!").catch(()=>{});
         }
-        // ЛОГИКА ОДОБРЕНИЯ ОТПУСКА
         else if (type === "vac") {
           if (target) {
             const rs = target.roles.cache.filter(r => r.id !== i.guild.id).map(r => r.id);
@@ -266,7 +290,7 @@ client.on("interactionCreate", async i => {
       }
     }
 
-    // ОБРАБОТКА МОДАЛКИ ОТКАЗА
+    // 6. Обработка модалки отказа
     if (i.isModalSubmit() && i.customId.startsWith("rej_modal_")) {
       const [,, uid, mid] = i.customId.split("_");
       const reason = i.fields.getTextInputValue("reason");
@@ -280,13 +304,15 @@ client.on("interactionCreate", async i => {
         await msg.edit({ embeds: [emb], components: [] });
       }
       if (target) target.send(`❌ Твоя заявка отклонена. Причина: ${reason}`).catch(()=>{});
-      return i.reply({ content: "Отказано!", ephemeral: true });
+      return i.reply({ content: "Статус обновлен на: Отказано.", ephemeral: true });
     }
 
-    // БАЛАНС И AFK
-    if (i.isButton() && i.customId === "balance_btn") return i.reply({ content: `💎 Твой баланс: **${getPoints(i.user.id)}**`, ephemeral: true });
+    // 7. Баланс
+    if (i.isButton() && i.customId === "balance_btn") {
+        return i.reply({ content: `💎 Ваш текущий баланс: **${getPoints(i.user.id)}** баллов.`, ephemeral: true });
+    }
     
-    // ОТПУСК И АФК
+    // 8. Логика AFK и Отпуска
     if (i.isButton() && i.customId === "afk_vacation") {
       const modal = new ModalBuilder().setCustomId("modal_vacation").setTitle("Оформление отпуска");
       modal.addComponents(
@@ -318,7 +344,6 @@ client.on("interactionCreate", async i => {
         
         await log.send({ embeds: [emb], components: [row] });
       }
-
       return i.reply({ content: "🏖 Заявка на отпуск отправлена руководству!", ephemeral: true });
     }
 
@@ -327,19 +352,19 @@ client.on("interactionCreate", async i => {
         afkdb.roles[i.user.id] = rs; saveAfk();
         for (const r of rs) await i.member.roles.remove(r).catch(() => {});
         await i.member.roles.add(CONFIG.VACATION_ROLE).catch(() => {});
-        return i.reply({ content: "🌙 Ты в AFK.", ephemeral: true });
+        return i.reply({ content: "🌙 Режим AFK включен. Ваши роли сохранены.", ephemeral: true });
     }
     
     if (i.isButton() && i.customId === "afk_off") {
         const saved = afkdb.roles[i.user.id];
-        if (!saved) return i.reply({ content: "❌ Ошибка (или ты не был в AFK/Отпуске)", ephemeral: true });
+        if (!saved) return i.reply({ content: "❌ Вы не находились в режиме AFK или Отпуска.", ephemeral: true });
         for (const r of saved) await i.member.roles.add(r).catch(() => {});
         await i.member.roles.remove(CONFIG.VACATION_ROLE).catch(() => {});
         delete afkdb.roles[i.user.id]; saveAfk();
-        return i.reply({ content: "✅ С возвращением!", ephemeral: true });
+        return i.reply({ content: "✅ С возвращением! Ваши роли восстановлены.", ephemeral: true });
     }
 
-  } catch (e) { console.error(e); }
+  } catch (e) { console.error("Ошибка взаимодействия:", e); }
 });
 
 client.login(process.env.TOKEN);

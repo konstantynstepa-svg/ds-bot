@@ -1,0 +1,17 @@
+{
+  "name": "coins-bot",
+  "version": "1.0.0",
+  "description": "Integrated Family Bot",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "fs": "^0.0.1-security"
+  }
+}

@@ -26,9 +26,9 @@ const CONFIG = {
   IMAGE: "https://cdn.discordapp.com/attachments/737990746086441041/1469395625849257994/3330ded1-da51-47f9-a7d7-dee6d1bdc918.png",
 };
 
-// === НОВОЕ: НАСТРОЙКИ ДЛЯ КАПТОВ ===
+// === НАСТРОЙКИ ДЛЯ КАПТОВ ===
 const CAPT_CONFIG = {
-  CHANNEL_ID: "1480474720683032660", // Канал, где будет панель каптов
+  CHANNEL_ID: "1480474720683032660", 
   IMAGE_URL: "https://cdn.discordapp.com/attachments/737990746086441041/1469395625849257994/3330ded1-da51-47f9-a7d7-dee6d1bdc918.png?ex=69c6c8d1&is=69c57751&hm=7791232c5c29f67819312e0a9fb4b390fc136f8dbb1d53c6f800f329f2eca109&",
   TIERS: {
     "1": "1479566016924221510",
@@ -41,10 +41,15 @@ const CAPT_CONFIG = {
     "1479566383003205663",
     "1479592954795655312",
     "1480694256736669806"
-  ]
+  ],
+  REMOVE_ROLES: [ // Роли, которые могут УДАЛЯТЬ с капта
+    "1056945517835341936",
+    "1479566887519129781",
+    "1479592954795655312"
+  ],
+  OWNER_ID: "530064311310352415" // ID Kenzo для стукачества
 };
 
-// Временная база для текущего капта (очищается при рестарте бота)
 let currentCapt = { tier1: [], tier2: [], tier3: [], subs: [] };
 // ====================================
 
@@ -84,7 +89,7 @@ const client = new Client({
 
 client.once("ready", () => console.log(`🚀 Бот ${client.user.tag} готов! Логи -> ${CONFIG.MAIN_LOG_CHANNEL}`));
 
-// === НОВОЕ: Функция для генерации Embed капта ===
+// === Функция для генерации Embed капта (С КАРТИНКОЙ) ===
 function buildCaptEmbed() {
   const formatList = (arr) => arr.length > 0 ? arr.map(id => `<@${id}>`).join('\n') : "Пусто";
   
@@ -92,6 +97,7 @@ function buildCaptEmbed() {
     .setTitle("⚔️ Война Семей (Капт)")
     .setDescription("Нажмите кнопку ниже, чтобы записаться на капт.")
     .setColor("#2b2d31")
+    .setImage(CAPT_CONFIG.IMAGE_URL) // ДОБАВЛЕНА КАРТИНКА СЮДА
     .addFields(
       { name: `Tier 1: (${currentCapt.tier1.length})`, value: formatList(currentCapt.tier1), inline: true },
       { name: `Tier 2: (${currentCapt.tier2.length})`, value: formatList(currentCapt.tier2), inline: true },
@@ -105,7 +111,6 @@ function buildCaptEmbed() {
 client.on("messageCreate", async msg => {
   if (msg.author.bot) return;
 
-  // Команда выдачи баллов (только для Лидера)
   if (msg.content.startsWith("!give")) {
     if (!msg.member.roles.cache.has(CONFIG.ROLE_LEADER_ID)) return msg.reply("❌ Нет прав");
     const user = msg.mentions.users.first();
@@ -115,7 +120,6 @@ client.on("messageCreate", async msg => {
     return msg.reply(`✅ Выдано ${amount} 💎 игроку ${user}`);
   }
 
-  // Главное меню системы баллов
   if (msg.content === "!menu") {
     const embed = new EmbedBuilder()
       .setTitle("💎 СИСТЕМА БАЛЛОВ И ПОВЫШЕНИЯ")
@@ -131,7 +135,6 @@ client.on("messageCreate", async msg => {
     msg.channel.send({ embeds: [embed], components: [row] });
   }
 
-  // Заявка в семью
   if (msg.content === "!заявка" && msg.channel.id === CONFIG.COMMAND_CHANNEL_ID) {
     const embed = new EmbedBuilder()
         .setTitle("📝 ЗАЯВКА В СЕМЬЮ")
@@ -142,7 +145,6 @@ client.on("messageCreate", async msg => {
     msg.channel.send({ embeds: [embed], components: [new ActionRowBuilder().addComponents(btn)] });
   }
 
-  // Команда AFK с картинкой
   if (msg.content === "!afk") {
     const afkEmbed = new EmbedBuilder()
       .setTitle("💤 Управление статусом AFK / Отпуск")
@@ -162,37 +164,35 @@ client.on("messageCreate", async msg => {
     msg.channel.send({ embeds: [afkEmbed], components: [row] });
   }
 
-  // === НОВОЕ: КОМАНДЫ КАПТОВ ===
-
-  // 1. Команда спавна панели капта
+  // === КОМАНДЫ КАПТОВ ===
   if (msg.content === "!startcapt") {
     const hasMgmtRole = CAPT_CONFIG.MANAGEMENT_ROLES.some(r => msg.member.roles.cache.has(r));
     if (!hasMgmtRole) return msg.reply("❌ У вас нет прав для создания сбора на капт.");
     
-    currentCapt = { tier1: [], tier2: [], tier3: [], subs: [] }; // Сброс списков
+    currentCapt = { tier1: [], tier2: [], tier3: [], subs: [] };
 
+    // Теперь кнопок 5 (это максимум для одного ряда)
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId("capt_plus").setLabel("Плюс на капт").setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId("capt_sub").setLabel("Плюс в замену").setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId("capt_minus").setLabel("Отмена плюса").setStyle(ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId("capt_force").setLabel("Вписать в список").setStyle(ButtonStyle.Primary)
+      new ButtonBuilder().setCustomId("capt_minus").setLabel("Отмена плюса").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("capt_force").setLabel("Вписать").setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId("capt_remove").setLabel("Удалить с капта").setStyle(ButtonStyle.Danger) // НОВАЯ КНОПКА
     );
 
     msg.channel.send({ embeds: [buildCaptEmbed()], components: [row] });
     msg.delete().catch(()=>{});
   }
 
-  // 2. Команда оповещения в ЛС (Скрытая)
   if (msg.content.startsWith("!капт")) {
     const hasMgmtRole = CAPT_CONFIG.MANAGEMENT_ROLES.some(r => msg.member.roles.cache.has(r));
-    if (!hasMgmtRole) return; // Игнорим, если нет прав
+    if (!hasMgmtRole) return; 
 
-    msg.delete().catch(()=>{}); // Удаляем сообщение сразу
+    msg.delete().catch(()=>{});
 
     const args = msg.content.split(" ");
     const time = args.slice(1).join(" ") || "скоро";
 
-    // Ищем всех с ролью принятых
     await msg.guild.members.fetch();
     const membersToAlert = msg.guild.members.cache.filter(m => m.roles.cache.has(CONFIG.ROLE_ACCEPTED_ID) && !m.user.bot);
 
@@ -208,30 +208,56 @@ client.on("messageCreate", async msg => {
       try {
         await member.send({ embeds: [alertEmbed] });
         count++;
-      } catch (err) {
-        // У пользователя закрыты ЛС
-      }
+      } catch (err) {}
     });
 
-    // Отправляем тихий отчет админу
     msg.author.send(`✅ Рассылка о капте запущена! Оповещено пользователей: ~${membersToAlert.size}`).catch(()=>{});
   }
-  // ==============================
 });
 
 /* ================= [ ВЗАИМОДЕЙСТВИЯ ] ================= */
 client.on("interactionCreate", async i => {
   try {
-    // === НОВОЕ: ВЗАИМОДЕЙСТВИЯ КАПТОВ ===
+    // === ВЗАИМОДЕЙСТВИЯ КАПТОВ ===
     if (i.isButton() && i.customId.startsWith("capt_")) {
-      // Проверка: принят ли человек в фаму (если это не админская кнопка)
+      
+      // Логика новой кнопки УДАЛИТЬ С КАПТА
+      if (i.customId === "capt_remove") {
+        const hasPerm = CAPT_CONFIG.REMOVE_ROLES.some(r => i.member.roles.cache.has(r));
+        
+        if (!hasPerm) {
+          // Если нет прав - стучим Kenzo в ЛС
+          client.users.fetch(CAPT_CONFIG.OWNER_ID).then(owner => {
+            owner.send(`⚠️ **Стук-стук!** Игрок ${i.user} (\`${i.user.tag}\`) попытался нажать кнопку "Удалить с капта" без прав!`).catch(()=>{});
+          }).catch(()=>{});
+          
+          // Выдаем смешной текст нарушителю
+          return i.reply({ content: "АХ ТЫ ПИСЮН МАРИНОВАНЫЙ РЕШИЛ Удалить кавото я все Kenzo раскажу", ephemeral: true });
+        }
+
+        // Если права есть - открываем модалку
+        const modal = new ModalBuilder().setCustomId("modal_capt_remove").setTitle("Удалить с капта");
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(new TextInputBuilder()
+            .setCustomId("target_id")
+            .setLabel("Discord ID пользователя")
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)),
+          new ActionRowBuilder().addComponents(new TextInputBuilder()
+            .setCustomId("reason")
+            .setLabel("Причина удаления")
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true))
+        );
+        return i.showModal(modal);
+      }
+
       if (i.customId !== "capt_force" && !i.member.roles.cache.has(CONFIG.ROLE_ACCEPTED_ID)) {
         return i.reply({ content: "❌ Вы не состоите в семье!", ephemeral: true });
       }
 
       const userId = i.user.id;
       
-      // Вспомогательная функция для удаления юзера отовсюду
       const removeFromCapt = (id) => {
         currentCapt.tier1 = currentCapt.tier1.filter(u => u !== id);
         currentCapt.tier2 = currentCapt.tier2.filter(u => u !== id);
@@ -239,12 +265,11 @@ client.on("interactionCreate", async i => {
         currentCapt.subs = currentCapt.subs.filter(u => u !== id);
       };
 
-      // Вспомогательная функция определения тира
       const getTier = (member) => {
         if (member.roles.cache.has(CAPT_CONFIG.TIERS["1"])) return "tier1";
         if (member.roles.cache.has(CAPT_CONFIG.TIERS["2"])) return "tier2";
         if (member.roles.cache.has(CAPT_CONFIG.TIERS["3"])) return "tier3";
-        return "tier3"; // По умолчанию кидаем в 3 тир, если ролей нет
+        return "tier3"; 
       };
 
       if (i.customId === "capt_plus") {
@@ -280,18 +305,17 @@ client.on("interactionCreate", async i => {
       }
     }
 
+    // Обработка модалки: Вписать руками
     if (i.isModalSubmit() && i.customId === "modal_capt_force") {
       const targetId = i.fields.getTextInputValue("target_id");
       try {
         const targetMember = await i.guild.members.fetch(targetId);
         
-        // Удаляем если он уже был
         currentCapt.tier1 = currentCapt.tier1.filter(u => u !== targetId);
         currentCapt.tier2 = currentCapt.tier2.filter(u => u !== targetId);
         currentCapt.tier3 = currentCapt.tier3.filter(u => u !== targetId);
         currentCapt.subs = currentCapt.subs.filter(u => u !== targetId);
 
-        // Определяем тир
         let tier = "tier3";
         if (targetMember.roles.cache.has(CAPT_CONFIG.TIERS["1"])) tier = "tier1";
         else if (targetMember.roles.cache.has(CAPT_CONFIG.TIERS["2"])) tier = "tier2";
@@ -303,6 +327,21 @@ client.on("interactionCreate", async i => {
       } catch (err) {
         return i.reply({ content: "❌ Пользователь не найден на сервере или указан неверный ID.", ephemeral: true });
       }
+    }
+
+    // Обработка модалки: УДАЛИТЬ руками
+    if (i.isModalSubmit() && i.customId === "modal_capt_remove") {
+      const targetId = i.fields.getTextInputValue("target_id");
+      const reason = i.fields.getTextInputValue("reason");
+
+      // Сносим из всех колонок
+      currentCapt.tier1 = currentCapt.tier1.filter(u => u !== targetId);
+      currentCapt.tier2 = currentCapt.tier2.filter(u => u !== targetId);
+      currentCapt.tier3 = currentCapt.tier3.filter(u => u !== targetId);
+      currentCapt.subs = currentCapt.subs.filter(u => u !== targetId);
+
+      await i.message.edit({ embeds: [buildCaptEmbed()] });
+      return i.reply({ content: `🧹 Игрок <@${targetId}> удален из списков капта.\n**Причина:** ${reason}`, ephemeral: true });
     }
     // ==========================================
 

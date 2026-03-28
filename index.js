@@ -15,14 +15,14 @@ const fs = require("fs");
 
 /* ================= [ НАСТРОЙКИ ] ================= */
 const CONFIG = {
-  COMMAND_CHANNEL_ID: "1480220429988659251", // Канал для команд
-  MAIN_LOG_CHANNEL: "1480227101905785113",    // ЕДИНЫЙ КАНАЛ ДЛЯ ВСЕХ ЛОГОВ
-  ROLE_ACCEPTED_ID: "1479557914086740104",   // Роль принятого
-  ROLE_LEADER_ID: "1056945517835341936",     // Кто может юзать !give
-  MEIN_ROLE_ID: "1480229891789160479",       // 3 ранг
-  MEIN_PLUS_ROLE_ID: "1479574658935423087",  // 4 ранг
-  AFK_LOG_CHANNEL: "1480228317222277171",    // Логи отпуска
-  VACATION_ROLE: "1479988454484869271",      // Роль AFK/Отпуск
+  COMMAND_CHANNEL_ID: "1480220429988659251", 
+  MAIN_LOG_CHANNEL: "1480227101905785113",    
+  ROLE_ACCEPTED_ID: "1479557914086740104",   
+  ROLE_LEADER_ID: "1056945517835341936",     
+  MEIN_ROLE_ID: "1480229891789160479",       
+  MEIN_PLUS_ROLE_ID: "1479574658935423087",  
+  AFK_LOG_CHANNEL: "1480228317222277171",    
+  VACATION_ROLE: "1479988454484869271",      
   IMAGE: "https://cdn.discordapp.com/attachments/737990746086441041/1469395625849257994/3330ded1-da51-47f9-a7d7-dee6d1bdc918.png",
 };
 
@@ -42,19 +42,33 @@ const CAPT_CONFIG = {
     "1479592954795655312",
     "1480694256736669806"
   ],
-  REMOVE_ROLES: [ // Роли, которые могут УДАЛЯТЬ с капта
+  REMOVE_ROLES: [
     "1056945517835341936",
     "1479566887519129781",
     "1479592954795655312"
   ],
-  OWNER_ID: "530064311310352415" // ID Kenzo для стукачества
+  OWNER_ID: "530064311310352415" // ID Kenzo
+};
+
+// === НАСТРОЙКИ ДЛЯ ВАРНОВ ===
+const WARN_CONFIG = {
+  WARN_CMD_CHANNEL: "1480226568449036390",  // Канал для команды !варн
+  WORK_CHANNEL: "1480226737718558805",      // Канал "Отработка"
+  IMAGE_URL: "https://cdn.discordapp.com/attachments/737990746086441041/1469395625849257994/3330ded1-da51-47f9-a7d7-dee6d1bdc918.png?ex=69c81a51&is=69c6c8d1&hm=0bd530608fad4b8ad05de3506c749490ed9eed1a1c56ac5697acd4dd0faa7504&",
+  MANAGEMENT_ROLES: [
+    "1056945517835341936",
+    "1479566887519129781",
+    "1480694180538744912",
+    "1479566383003205663",
+    "1480694256736669806"
+  ],
+  REMOVE_COST: 50,           // Цена снятия варна
+  BRIBE_COST: 10,            // Взятка боту
+  COOLDOWN_MS: 48 * 60 * 60 * 1000 // 48 часов в миллисекундах
 };
 
 let currentCapt = { tier1: [], tier2: [], tier3: [], subs: [] };
-// ====================================
-
 const RANK_COSTS = { "3": 89, "4": 179 };
-
 const EARN_OPTIONS = [
   { label: 'Капт (5 баллов)', value: 'capt_5' },
   { label: 'Заправка (3 балла)', value: 'gas_3' },
@@ -68,8 +82,8 @@ const EARN_OPTIONS = [
 ];
 
 /* ================= [ БАЗЫ ДАННЫХ ] ================= */
-let db = { points: {} };
-if (fs.existsSync("db.json")) db = JSON.parse(fs.readFileSync("db.json"));
+let db = { points: {}, warnCooldowns: {} }; // Добавили хранилище для кулдаунов варна
+if (fs.existsSync("db.json")) db = Object.assign({ points: {}, warnCooldowns: {} }, JSON.parse(fs.readFileSync("db.json")));
 let afkdb = { roles: {} };
 if (fs.existsSync("afkdb.json")) afkdb = JSON.parse(fs.readFileSync("afkdb.json"));
 
@@ -77,6 +91,8 @@ const save = () => fs.writeFileSync("db.json", JSON.stringify(db, null, 2));
 const saveAfk = () => fs.writeFileSync("afkdb.json", JSON.stringify(afkdb, null, 2));
 const addPoints = (id, amt) => { db.points[id] = (db.points[id] || 0) + amt; save(); };
 const getPoints = (id) => db.points[id] || 0;
+const setWarnCooldown = (id) => { db.warnCooldowns[id] = Date.now() + WARN_CONFIG.COOLDOWN_MS; save(); };
+const getWarnCooldown = (id) => db.warnCooldowns[id] || 0;
 
 const client = new Client({
   intents: [
@@ -89,15 +105,13 @@ const client = new Client({
 
 client.once("ready", () => console.log(`🚀 Бот ${client.user.tag} готов! Логи -> ${CONFIG.MAIN_LOG_CHANNEL}`));
 
-// === Функция для генерации Embed капта (С КАРТИНКОЙ) ===
 function buildCaptEmbed() {
   const formatList = (arr) => arr.length > 0 ? arr.map(id => `<@${id}>`).join('\n') : "Пусто";
-  
   return new EmbedBuilder()
     .setTitle("⚔️ Война Семей (Капт)")
     .setDescription("Нажмите кнопку ниже, чтобы записаться на капт.")
     .setColor("#2b2d31")
-    .setImage(CAPT_CONFIG.IMAGE_URL) // ДОБАВЛЕНА КАРТИНКА СЮДА
+    .setImage(CAPT_CONFIG.IMAGE_URL) 
     .addFields(
       { name: `Tier 1: (${currentCapt.tier1.length})`, value: formatList(currentCapt.tier1), inline: true },
       { name: `Tier 2: (${currentCapt.tier2.length})`, value: formatList(currentCapt.tier2), inline: true },
@@ -105,7 +119,6 @@ function buildCaptEmbed() {
       { name: `Замены: (${currentCapt.subs.length})`, value: formatList(currentCapt.subs), inline: false }
     );
 }
-// =================================================
 
 /* ================= [ КОМАНДЫ ] ================= */
 client.on("messageCreate", async msg => {
@@ -149,7 +162,7 @@ client.on("messageCreate", async msg => {
     const afkEmbed = new EmbedBuilder()
       .setTitle("💤 Управление статусом AFK / Отпуск")
       .setDescription("Выберите нужное действие:\n\n" +
-                      "🏖 **Отпуск** — подать заявку (снимает все роли).\n" +
+                      "🏖 **Отпуск** — подать заявку.\n" +
                       "🌙 **AFK** — временный уход.\n" +
                       "✅ **Выйти** — вернуть свои роли.")
       .setImage(CONFIG.IMAGE)
@@ -164,22 +177,18 @@ client.on("messageCreate", async msg => {
     msg.channel.send({ embeds: [afkEmbed], components: [row] });
   }
 
-  // === КОМАНДЫ КАПТОВ ===
+  // === КАПТЫ ===
   if (msg.content === "!startcapt") {
     const hasMgmtRole = CAPT_CONFIG.MANAGEMENT_ROLES.some(r => msg.member.roles.cache.has(r));
     if (!hasMgmtRole) return msg.reply("❌ У вас нет прав для создания сбора на капт.");
-    
     currentCapt = { tier1: [], tier2: [], tier3: [], subs: [] };
-
-    // Теперь кнопок 5 (это максимум для одного ряда)
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId("capt_plus").setLabel("Плюс на капт").setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId("capt_sub").setLabel("Плюс в замену").setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId("capt_minus").setLabel("Отмена плюса").setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId("capt_force").setLabel("Вписать").setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId("capt_remove").setLabel("Удалить с капта").setStyle(ButtonStyle.Danger) // НОВАЯ КНОПКА
+      new ButtonBuilder().setCustomId("capt_remove").setLabel("Удалить с капта").setStyle(ButtonStyle.Danger)
     );
-
     msg.channel.send({ embeds: [buildCaptEmbed()], components: [row] });
     msg.delete().catch(()=>{});
   }
@@ -187,84 +196,236 @@ client.on("messageCreate", async msg => {
   if (msg.content.startsWith("!капт")) {
     const hasMgmtRole = CAPT_CONFIG.MANAGEMENT_ROLES.some(r => msg.member.roles.cache.has(r));
     if (!hasMgmtRole) return; 
-
     msg.delete().catch(()=>{});
-
-    const args = msg.content.split(" ");
-    const time = args.slice(1).join(" ") || "скоро";
-
+    const time = msg.content.split(" ").slice(1).join(" ") || "скоро";
     await msg.guild.members.fetch();
     const membersToAlert = msg.guild.members.cache.filter(m => m.roles.cache.has(CONFIG.ROLE_ACCEPTED_ID) && !m.user.bot);
-
     const alertEmbed = new EmbedBuilder()
       .setTitle("🚨 ВНИМАНИЕ: КАПТ!")
-      .setDescription(`На нас напали / Мы нападаем!\n\n**Сбор в войсе через: ${time}**\nЗаходи в игру и подключайся к каналу!`)
+      .setDescription(`Сбор в войсе через: **${time}**\nЗаходи в игру!`)
       .setImage(CAPT_CONFIG.IMAGE_URL)
-      .setColor("Red")
-      .setTimestamp();
+      .setColor("Red");
 
-    let count = 0;
-    membersToAlert.forEach(async (member) => {
-      try {
-        await member.send({ embeds: [alertEmbed] });
-        count++;
-      } catch (err) {}
-    });
+    membersToAlert.forEach(async (member) => { try { await member.send({ embeds: [alertEmbed] }); } catch (err) {} });
+    msg.author.send(`✅ Оповещено пользователей: ~${membersToAlert.size}`).catch(()=>{});
+  }
 
-    msg.author.send(`✅ Рассылка о капте запущена! Оповещено пользователей: ~${membersToAlert.size}`).catch(()=>{});
+  // === ВАРНЫ (ВЫЗОВ МЕНЮ) ===
+  if (msg.content === "!варн") {
+    const hasMgmtRole = WARN_CONFIG.MANAGEMENT_ROLES.some(r => msg.member.roles.cache.has(r));
+    if (!hasMgmtRole) return msg.reply("❌ У вас нет прав для управления варнами.");
+    
+    const embed = new EmbedBuilder()
+      .setTitle("⚠️ Панель управления Варнами")
+      .setDescription("Нажмите кнопку ниже, чтобы выписать игроку варн.")
+      .setImage(WARN_CONFIG.IMAGE_URL)
+      .setColor("DarkRed");
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("warn_issue_btn").setLabel("Выдать варн").setStyle(ButtonStyle.Danger)
+    );
+    msg.channel.send({ embeds: [embed], components: [row] });
+    msg.delete().catch(()=>{});
   }
 });
 
 /* ================= [ ВЗАИМОДЕЙСТВИЯ ] ================= */
 client.on("interactionCreate", async i => {
   try {
-    // === ВЗАИМОДЕЙСТВИЯ КАПТОВ ===
-    if (i.isButton() && i.customId.startsWith("capt_")) {
-      
-      // Логика новой кнопки УДАЛИТЬ С КАПТА
-      if (i.customId === "capt_remove") {
-        const hasPerm = CAPT_CONFIG.REMOVE_ROLES.some(r => i.member.roles.cache.has(r));
-        
-        if (!hasPerm) {
-          // Если нет прав - стучим Kenzo в ЛС
-          client.users.fetch(CAPT_CONFIG.OWNER_ID).then(owner => {
-            owner.send(`⚠️ **Стук-стук!** Игрок ${i.user} (\`${i.user.tag}\`) попытался нажать кнопку "Удалить с капта" без прав!`).catch(()=>{});
-          }).catch(()=>{});
-          
-          // Выдаем смешной текст нарушителю
-          return i.reply({ content: "АХ ТЫ ПИСЮН МАРИНОВАНЫЙ РЕШИЛ Удалить кавото я все Kenzo раскажу", ephemeral: true });
-        }
+    // ==========================================
+    // ВАРНЫ: ВЫДАЧА И ОТРАБОТКА
+    // ==========================================
+    if (i.isButton() && i.customId === "warn_issue_btn") {
+      const hasMgmtRole = WARN_CONFIG.MANAGEMENT_ROLES.some(r => i.member.roles.cache.has(r));
+      if (!hasMgmtRole) return i.reply({ content: "❌ Куда жмешь? У тебя нет прав выписывать варны!", ephemeral: true });
 
-        // Если права есть - открываем модалку
-        const modal = new ModalBuilder().setCustomId("modal_capt_remove").setTitle("Удалить с капта");
-        modal.addComponents(
-          new ActionRowBuilder().addComponents(new TextInputBuilder()
-            .setCustomId("target_id")
-            .setLabel("Discord ID пользователя")
-            .setStyle(TextInputStyle.Short)
-            .setRequired(true)),
-          new ActionRowBuilder().addComponents(new TextInputBuilder()
-            .setCustomId("reason")
-            .setLabel("Причина удаления")
-            .setStyle(TextInputStyle.Short)
-            .setRequired(true))
-        );
+      const modal = new ModalBuilder().setCustomId("modal_warn_issue").setTitle("Выдача варна");
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("w_target").setLabel("ID пользователя").setStyle(TextInputStyle.Short).setRequired(true)),
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("w_reason").setLabel("Причина").setStyle(TextInputStyle.Short).setRequired(true)),
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("w_task").setLabel("Что нужно сделать для отработки?").setStyle(TextInputStyle.Paragraph).setRequired(true))
+      );
+      return i.showModal(modal);
+    }
+
+    if (i.isModalSubmit() && i.customId === "modal_warn_issue") {
+      const targetId = i.fields.getTextInputValue("w_target");
+      const reason = i.fields.getTextInputValue("w_reason");
+      const task = i.fields.getTextInputValue("w_task");
+
+      const otrabotkaChannel = await i.guild.channels.fetch(WARN_CONFIG.WORK_CHANNEL);
+      const embed = new EmbedBuilder()
+        .setTitle("🛑 ПОЛУЧЕН ВАРН")
+        .setColor("Red")
+        .setImage(WARN_CONFIG.IMAGE_URL)
+        .addFields(
+          { name: "👮 Выдал", value: `${i.user}`, inline: true },
+          { name: "👤 Нарушитель", value: `<@${targetId}>`, inline: true },
+          { name: "📝 Причина", value: reason, inline: false },
+          { name: "🛠 Как отработать", value: task, inline: false }
+        )
+        .setTimestamp();
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`w_rem_task_${targetId}`).setLabel("Снять заданием").setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(`w_appeal_${targetId}`).setLabel("Обжаловать").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`w_rem_pts_${targetId}`).setLabel(`Снять за ${WARN_CONFIG.REMOVE_COST} баллов`).setStyle(ButtonStyle.Primary)
+      );
+
+      await otrabotkaChannel.send({ content: `<@${targetId}>, у тебя проблемы!`, embeds: [embed], components: [row] });
+      return i.reply({ content: `✅ Варн успешно выдан игроку <@${targetId}>.`, ephemeral: true });
+    }
+
+    // Снятие варна: общие проверки
+    if (i.isButton() && i.customId.startsWith("w_")) {
+      const action = i.customId.split("_").slice(0, 3).join("_"); // e.g. w_rem_pts
+      const targetId = i.customId.split("_").pop();
+
+      // Проверка на того ли нажимают и есть ли нужная роль
+      if (i.user.id !== targetId && action !== "bribe_bot_pay" && action !== "bribe_bot_no") {
+         return i.reply({ content: "❌ Это не твой варн!", ephemeral: true });
+      }
+      if (!i.member.roles.cache.has(CONFIG.ROLE_ACCEPTED_ID) && action !== "bribe_bot_pay" && action !== "bribe_bot_no") {
+         return i.reply({ content: "❌ Тебе нужна роль 'Принятого', чтобы отрабатывать варны.", ephemeral: true });
+      }
+
+      // Кнопка: Снять заданием (отправка отчета)
+      if (action === "w_rem_task") {
+        const modal = new ModalBuilder().setCustomId(`modal_w_task_${targetId}`).setTitle("Отчет о снятии варна");
+        modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("proof").setLabel("Ссылка на доказательства (скрин/видео)").setStyle(TextInputStyle.Short).setRequired(true)));
         return i.showModal(modal);
       }
 
-      if (i.customId !== "capt_force" && !i.member.roles.cache.has(CONFIG.ROLE_ACCEPTED_ID)) {
-        return i.reply({ content: "❌ Вы не состоите в семье!", ephemeral: true });
+      // Кнопка: Обжаловать
+      if (action === "w_appeal") {
+        const modal = new ModalBuilder().setCustomId(`modal_w_app_${targetId}`).setTitle("Обжалование варна");
+        modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("reason").setLabel("Почему варн выдан неверно?").setStyle(TextInputStyle.Paragraph).setRequired(true)));
+        return i.showModal(modal);
       }
 
-      const userId = i.user.id;
+      // Кнопка: Снять за баллы (СИСТЕМА ВЗЯТОК И КД)
+      if (action === "w_rem_pts") {
+        const cooldown = getWarnCooldown(i.user.id);
+        const now = Date.now();
+
+        if (now < cooldown) {
+          // ИГРОК НА КД! ЗАПУСКАЕМ СХЕМУ С ВЗЯТКОЙ
+          const hoursLeft = Math.ceil((cooldown - now) / (1000 * 60 * 60));
+          
+          const embed = new EmbedBuilder()
+            .setTitle("🚨 АХ ТЫ ЗАХОТЕЛ ОБМАНУТЬ KENZO!")
+            .setDescription(`Ты уже снимал варн за баллы недавно! До следующего легального снятия осталось: **${hoursLeft} часов**.\n\nПоскольку ты гавнюк и пытаешься обойти систему, у тебя два пути:\n💵 **Плати мне (боту) ${WARN_CONFIG.BRIBE_COST} баллов**, и я забуду, что ты тут нажимал.\n❌ Либо жми **"Денег нет"**, и я прямо сейчас иду сливать всё Kenzo в ЛС!`)
+            .setColor("DarkRed");
+
+          const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`bribe_bot_pay_${targetId}`).setLabel(`Заплатить ${WARN_CONFIG.BRIBE_COST} баллов`).setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId(`bribe_bot_no_${targetId}`).setLabel("Денег нет...").setStyle(ButtonStyle.Danger)
+          );
+
+          return i.reply({ embeds: [embed], components: [row], ephemeral: true });
+        } else {
+          // ЛЕГАЛЬНОЕ СНЯТИЕ
+          const balance = getPoints(i.user.id);
+          if (balance < WARN_CONFIG.REMOVE_COST) {
+             return i.reply({ content: `❌ У тебя не хватает баллов! Нужно: ${WARN_CONFIG.REMOVE_COST}, а у тебя: ${balance}.`, ephemeral: true });
+          }
+          addPoints(i.user.id, -WARN_CONFIG.REMOVE_COST);
+          setWarnCooldown(i.user.id); // Вешаем кд на 48 часов
+
+          // Обновляем сообщение с варном
+          const msgEmbed = EmbedBuilder.from(i.message.embeds[0])
+            .setColor("Green")
+            .addFields({ name: "✅ СТАТУС", value: `Варн снят за ${WARN_CONFIG.REMOVE_COST} баллов.` });
+          await i.message.edit({ embeds: [msgEmbed], components: [] });
+
+          return i.reply({ content: `✅ Варн успешно снят! Списано ${WARN_CONFIG.REMOVE_COST} баллов. В следующий раз снять варн за баллы можно будет через 48 часов.`, ephemeral: true });
+        }
+      }
+    }
+
+    // Обработка кнопок взятки боту
+    if (i.isButton() && i.customId.startsWith("bribe_bot_")) {
+      const isPay = i.customId.includes("_pay_");
+      const balance = getPoints(i.user.id);
+
+      if (isPay) {
+        if (balance >= WARN_CONFIG.BRIBE_COST) {
+          addPoints(i.user.id, -WARN_CONFIG.BRIBE_COST);
+          return i.update({ embeds: [new EmbedBuilder().setColor("Green").setDescription("😎 Отлично. Баллы списаны. Я нем как рыба. Гуляй.")], components: [] });
+        } else {
+          // Нажал заплатить, а денег нет
+          client.users.fetch(CAPT_CONFIG.OWNER_ID).then(owner => {
+            owner.send(`⚠️ **Kenzo, тут крыса!** Игрок ${i.user} (\`${i.user.tag}\`) пытался снять варн в обход кулдауна, хотел дать мне взятку, но оказался нищим (даже 10 баллов нет)! Разберись с ним!`).catch(()=>{});
+          }).catch(()=>{});
+          return i.update({ embeds: [new EmbedBuilder().setColor("Red").setDescription("🤬 ТЫ ХОТЕЛ МЕНЯ ОБМАНУТЬ СУКИН СЫН! Денег у тебя нет! Я уже написал Kenzo, жди беды.")], components: [] });
+        }
+      } else {
+        // Нажал "Денег нет"
+        client.users.fetch(CAPT_CONFIG.OWNER_ID).then(owner => {
+          owner.send(`⚠️ **Kenzo, тут нарушитель!** Игрок ${i.user} (\`${i.user.tag}\`) пытался снять варн в обход кулдауна. Денег на взятку мне у него нет. Принимай меры.`).catch(()=>{});
+        }).catch(()=>{});
+        return i.update({ embeds: [new EmbedBuilder().setColor("DarkRed").setDescription("🤡 Ну всё, пиши пропало. Я сдал тебя Kenzo со всеми потрохами.")], components: [] });
+      }
+    }
+
+    // Обработка модалок варна (Обжаловать / Док-ва)
+    if (i.isModalSubmit() && (i.customId.startsWith("modal_w_task_") || i.customId.startsWith("modal_w_app_"))) {
+      const isTask = i.customId.includes("_task_");
+      const log = await i.guild.channels.fetch(CONFIG.MAIN_LOG_CHANNEL);
       
+      const emb = new EmbedBuilder()
+        .setTitle(isTask ? "🛠 ЗАПРОС НА СНЯТИЕ ВАРНА (ЗАДАНИЕ)" : "⚖️ ОБЖАЛОВАНИЕ ВАРНА")
+        .setColor(isTask ? "Blue" : "Orange")
+        .addFields(
+          { name: "👤 Игрок", value: `${i.user}` },
+          { name: isTask ? "🔗 Док-ва" : "📝 Причина обжалования", value: isTask ? i.fields.getTextInputValue("proof") : i.fields.getTextInputValue("reason") },
+          { name: "📊 Статус", value: "⏳ Ожидание проверки руководством" }
+        )
+        .setTimestamp();
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`adm_watch_req_${i.user.id}`).setLabel("👀 Смотрю").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`adm_ok_warnrem_${i.user.id}`).setLabel("✅ Одобрить снятие").setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(`adm_no_${i.user.id}`).setLabel("❌ Отклонить").setStyle(ButtonStyle.Danger)
+      );
+
+      await log.send({ embeds: [emb], components: [row] });
+      
+      // Удаляем кнопки у оригинального сообщения с варном в канале отработки
+      await i.message.edit({ components: [] }).catch(()=>{});
+      return i.reply({ content: "✅ Ваш запрос отправлен руководству на рассмотрение!", ephemeral: true });
+    }
+
+    // ==========================================
+    // СТАРЫЕ ВЗАИМОДЕЙСТВИЯ (Капты, Заявки и тд)
+    // ==========================================
+    
+    // Капты: Удалить (Писюн маринованный)
+    if (i.isButton() && i.customId === "capt_remove") {
+      const hasPerm = CAPT_CONFIG.REMOVE_ROLES.some(r => i.member.roles.cache.has(r));
+      if (!hasPerm) {
+        client.users.fetch(CAPT_CONFIG.OWNER_ID).then(owner => {
+          owner.send(`⚠️ **Стук-стук!** Игрок ${i.user} (\`${i.user.tag}\`) попытался нажать кнопку "Удалить с капта" без прав!`).catch(()=>{});
+        }).catch(()=>{});
+        return i.reply({ content: "АХ ТЫ ПИСЮН МАРИНОВАНЫЙ РЕШИЛ Удалить кавото я все Kenzo раскажу", ephemeral: true });
+      }
+      const modal = new ModalBuilder().setCustomId("modal_capt_remove").setTitle("Удалить с капта");
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("target_id").setLabel("Discord ID пользователя").setStyle(TextInputStyle.Short).setRequired(true)),
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("reason").setLabel("Причина удаления").setStyle(TextInputStyle.Short).setRequired(true))
+      );
+      return i.showModal(modal);
+    }
+
+    if (i.isButton() && i.customId.startsWith("capt_")) {
+      if (i.customId !== "capt_force" && !i.member.roles.cache.has(CONFIG.ROLE_ACCEPTED_ID)) return i.reply({ content: "❌ Вы не состоите в семье!", ephemeral: true });
+      const userId = i.user.id;
       const removeFromCapt = (id) => {
         currentCapt.tier1 = currentCapt.tier1.filter(u => u !== id);
         currentCapt.tier2 = currentCapt.tier2.filter(u => u !== id);
         currentCapt.tier3 = currentCapt.tier3.filter(u => u !== id);
         currentCapt.subs = currentCapt.subs.filter(u => u !== id);
       };
-
       const getTier = (member) => {
         if (member.roles.cache.has(CAPT_CONFIG.TIERS["1"])) return "tier1";
         if (member.roles.cache.has(CAPT_CONFIG.TIERS["2"])) return "tier2";
@@ -272,45 +433,23 @@ client.on("interactionCreate", async i => {
         return "tier3"; 
       };
 
-      if (i.customId === "capt_plus") {
-        removeFromCapt(userId);
-        currentCapt[getTier(i.member)].push(userId);
-        await i.update({ embeds: [buildCaptEmbed()] });
-      }
-
-      if (i.customId === "capt_sub") {
-        removeFromCapt(userId);
-        currentCapt.subs.push(userId);
-        await i.update({ embeds: [buildCaptEmbed()] });
-      }
-
-      if (i.customId === "capt_minus") {
-        removeFromCapt(userId);
-        await i.update({ embeds: [buildCaptEmbed()] });
-      }
-
+      if (i.customId === "capt_plus") { removeFromCapt(userId); currentCapt[getTier(i.member)].push(userId); await i.update({ embeds: [buildCaptEmbed()] }); }
+      if (i.customId === "capt_sub") { removeFromCapt(userId); currentCapt.subs.push(userId); await i.update({ embeds: [buildCaptEmbed()] }); }
+      if (i.customId === "capt_minus") { removeFromCapt(userId); await i.update({ embeds: [buildCaptEmbed()] }); }
+      
       if (i.customId === "capt_force") {
         const hasMgmtRole = CAPT_CONFIG.MANAGEMENT_ROLES.some(r => i.member.roles.cache.has(r));
         if (!hasMgmtRole) return i.reply({ content: "❌ У вас нет прав для этой кнопки.", ephemeral: true });
-
         const modal = new ModalBuilder().setCustomId("modal_capt_force").setTitle("Вписать участника");
-        modal.addComponents(
-          new ActionRowBuilder().addComponents(new TextInputBuilder()
-            .setCustomId("target_id")
-            .setLabel("Discord ID пользователя")
-            .setStyle(TextInputStyle.Short)
-            .setRequired(true))
-        );
+        modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("target_id").setLabel("Discord ID пользователя").setStyle(TextInputStyle.Short).setRequired(true)));
         return i.showModal(modal);
       }
     }
 
-    // Обработка модалки: Вписать руками
     if (i.isModalSubmit() && i.customId === "modal_capt_force") {
       const targetId = i.fields.getTextInputValue("target_id");
       try {
         const targetMember = await i.guild.members.fetch(targetId);
-        
         currentCapt.tier1 = currentCapt.tier1.filter(u => u !== targetId);
         currentCapt.tier2 = currentCapt.tier2.filter(u => u !== targetId);
         currentCapt.tier3 = currentCapt.tier3.filter(u => u !== targetId);
@@ -321,31 +460,23 @@ client.on("interactionCreate", async i => {
         else if (targetMember.roles.cache.has(CAPT_CONFIG.TIERS["2"])) tier = "tier2";
         
         currentCapt[tier].push(targetId);
-        
         await i.message.edit({ embeds: [buildCaptEmbed()] });
         return i.reply({ content: `✅ Пользователь ${targetMember.user.tag} успешно вписан!`, ephemeral: true });
-      } catch (err) {
-        return i.reply({ content: "❌ Пользователь не найден на сервере или указан неверный ID.", ephemeral: true });
-      }
+      } catch (err) { return i.reply({ content: "❌ Пользователь не найден на сервере или указан неверный ID.", ephemeral: true }); }
     }
 
-    // Обработка модалки: УДАЛИТЬ руками
     if (i.isModalSubmit() && i.customId === "modal_capt_remove") {
       const targetId = i.fields.getTextInputValue("target_id");
       const reason = i.fields.getTextInputValue("reason");
-
-      // Сносим из всех колонок
       currentCapt.tier1 = currentCapt.tier1.filter(u => u !== targetId);
       currentCapt.tier2 = currentCapt.tier2.filter(u => u !== targetId);
       currentCapt.tier3 = currentCapt.tier3.filter(u => u !== targetId);
       currentCapt.subs = currentCapt.subs.filter(u => u !== targetId);
-
       await i.message.edit({ embeds: [buildCaptEmbed()] });
       return i.reply({ content: `🧹 Игрок <@${targetId}> удален из списков капта.\n**Причина:** ${reason}`, ephemeral: true });
     }
-    // ==========================================
 
-    // 1. Выбор работы (Заработок)
+    // Заработок баллов
     if (i.isButton() && i.customId === "earn_btn") {
       const selectMenu = new StringSelectMenuBuilder().setCustomId("earn_select").setPlaceholder("Что ты сделал?");
       EARN_OPTIONS.forEach(opt => selectMenu.addOptions(new StringSelectMenuOptionBuilder().setLabel(opt.label).setValue(opt.value)));
@@ -362,7 +493,6 @@ client.on("interactionCreate", async i => {
       return i.showModal(modal);
     }
 
-    // 2. Логирование отчетов на баллы
     if (i.isModalSubmit() && i.customId.startsWith("me_")) {
       const taskKey = i.customId.replace("me_", "");
       const task = EARN_OPTIONS.find(o => o.value === taskKey);
@@ -370,13 +500,7 @@ client.on("interactionCreate", async i => {
       const log = await i.guild.channels.fetch(CONFIG.MAIN_LOG_CHANNEL);
       
       const emb = new EmbedBuilder().setTitle("💰 ОТЧЕТ НА БАЛЛЫ").setColor("Yellow")
-        .addFields(
-          { name: "👤 Игрок", value: `${i.user}` },
-          { name: "🛠 Работа", value: task.label },
-          { name: "📝 Инфо", value: i.fields.getTextInputValue("e1") },
-          { name: "🔗 Док-ва", value: i.fields.getTextInputValue("e2") },
-          { name: "📊 Статус", value: "⏳ Ожидание" }
-        ).setTimestamp();
+        .addFields({ name: "👤 Игрок", value: `${i.user}` }, { name: "🛠 Работа", value: task.label }, { name: "📝 Инфо", value: i.fields.getTextInputValue("e1") }, { name: "🔗 Док-ва", value: i.fields.getTextInputValue("e2") }, { name: "📊 Статус", value: "⏳ Ожидание" }).setTimestamp();
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`adm_watch_req_${i.user.id}`).setLabel("👀 Смотрю").setStyle(ButtonStyle.Secondary),
@@ -388,7 +512,7 @@ client.on("interactionCreate", async i => {
       return i.reply({ content: "Ваш отчет успешно отправлен на проверку!", ephemeral: true });
     }
 
-    // 3. Заявка в семью
+    // Заявка в фаму
     if (i.isButton() && i.customId === "apply_start") {
       const modal = new ModalBuilder().setCustomId("modal_apply").setTitle("Анкета в семью");
       modal.addComponents(
@@ -404,15 +528,7 @@ client.on("interactionCreate", async i => {
     if (i.isModalSubmit() && i.customId === "modal_apply") {
       const log = await i.guild.channels.fetch(CONFIG.MAIN_LOG_CHANNEL);
       const embed = new EmbedBuilder().setTitle("📩 НОВАЯ ЗАЯВКА В СЕМЬЮ").setColor("#ff0000")
-        .addFields(
-          { name: "👤 Отправитель", value: `${i.user}` },
-          { name: "📝 Ник / Имя / Возраст", value: i.fields.getTextInputValue("a1") },
-          { name: "🕒 Онлайн и уровень", value: i.fields.getTextInputValue("a2") },
-          { name: "🏠 Прошлые семьи", value: i.fields.getTextInputValue("a3") },
-          { name: "🌍 Источник", value: i.fields.getTextInputValue("a4") },
-          { name: "🔫 Навыки (Откат/Спешик)", value: i.fields.getTextInputValue("a5") },
-          { name: "📊 Статус", value: "⏳ Ожидание" }
-        ).setTimestamp();
+        .addFields({ name: "👤 Отправитель", value: `${i.user}` }, { name: "📝 Ник / Возраст", value: i.fields.getTextInputValue("a1") }, { name: "🕒 Онлайн/лвл", value: i.fields.getTextInputValue("a2") }, { name: "🏠 Прошлые семьи", value: i.fields.getTextInputValue("a3") }, { name: "🌍 Источник", value: i.fields.getTextInputValue("a4") }, { name: "🔫 Навыки", value: i.fields.getTextInputValue("a5") }, { name: "📊 Статус", value: "⏳ Ожидание" }).setTimestamp();
       
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`adm_watch_req_${i.user.id}`).setLabel("👀 Смотрю").setStyle(ButtonStyle.Secondary),
@@ -423,7 +539,7 @@ client.on("interactionCreate", async i => {
       return i.reply({ content: "✅ Ваша заявка отправлена!", ephemeral: true });
     }
 
-    // 4. Запрос повышения
+    // Запрос повышения
     if (i.isButton() && i.customId === "rankup_btn") {
       const modal = new ModalBuilder().setCustomId("modal_rankup").setTitle("Повышение");
       modal.addComponents(
@@ -441,12 +557,7 @@ client.on("interactionCreate", async i => {
 
       const log = await i.guild.channels.fetch(CONFIG.MAIN_LOG_CHANNEL);
       const emb = new EmbedBuilder().setTitle("📈 ЗАПРОС ПОВЫШЕНИЯ").setColor("Green")
-        .addFields(
-          { name: "👤 Игрок", value: `${i.user}` },
-          { name: "🎖 Ранг", value: rank },
-          { name: "🎬 Видео", value: i.fields.getTextInputValue("r2") },
-          { name: "📊 Статус", value: "⏳ Ожидание" }
-        ).setTimestamp();
+        .addFields({ name: "👤 Игрок", value: `${i.user}` }, { name: "🎖 Ранг", value: rank }, { name: "🎬 Видео", value: i.fields.getTextInputValue("r2") }, { name: "📊 Статус", value: "⏳ Ожидание" }).setTimestamp();
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`adm_watch_req_${i.user.id}`).setLabel("👀 Смотрю").setStyle(ButtonStyle.Secondary),
@@ -458,7 +569,7 @@ client.on("interactionCreate", async i => {
       return i.reply({ content: "Заявка на повышение отправлена!", ephemeral: true });
     }
 
-    // 5. Админ-кнопки (Одобрение/Отказ)
+    // АДМИН-КНОПКИ
     if (i.isButton() && i.customId.startsWith("adm_")) {
       const [ , action, type, uid, val1, val2] = i.customId.split("_");
       const target = await i.guild.members.fetch(uid).catch(() => null);
@@ -495,6 +606,10 @@ client.on("interactionCreate", async i => {
             target.send("🏖 Твой отпуск одобрен! Хорошего отдыха.").catch(()=>{});
           }
         }
+        else if (type === "warnrem") {
+           // Одобрено снятие варна через лог канал
+           if (target) target.send("✅ Твой запрос на снятие/обжалование варна одобрен!").catch(()=>{});
+        }
 
         const fields = embed.data.fields.map(f => f.name === "📊 Статус" ? {name:"📊 Статус", value:`✅ Одобрено (${i.user.username})`} : f);
         embed.setColor("Green").setFields(fields);
@@ -508,7 +623,6 @@ client.on("interactionCreate", async i => {
       }
     }
 
-    // 6. Обработка модалки отказа
     if (i.isModalSubmit() && i.customId.startsWith("rej_modal_")) {
       const [,, uid, mid] = i.customId.split("_");
       const reason = i.fields.getTextInputValue("reason");
@@ -525,12 +639,11 @@ client.on("interactionCreate", async i => {
       return i.reply({ content: "Статус обновлен на: Отказано.", ephemeral: true });
     }
 
-    // 7. Баланс
     if (i.isButton() && i.customId === "balance_btn") {
         return i.reply({ content: `💎 Ваш текущий баланс: **${getPoints(i.user.id)}** баллов.`, ephemeral: true });
     }
     
-    // 8. Логика AFK и Отпуска
+    // AFK и Отпуск
     if (i.isButton() && i.customId === "afk_vacation") {
       const modal = new ModalBuilder().setCustomId("modal_vacation").setTitle("Оформление отпуска");
       modal.addComponents(
@@ -544,22 +657,14 @@ client.on("interactionCreate", async i => {
       const dates = i.fields.getTextInputValue("v1");
       const reason = i.fields.getTextInputValue("v2");
       const log = await i.guild.channels.fetch(CONFIG.AFK_LOG_CHANNEL).catch(() => null);
-
       if (log) {
         const emb = new EmbedBuilder().setTitle("🏖 ЗАПРОС НА ОТПУСК").setColor("Orange")
-          .addFields(
-            { name: "👤 Игрок", value: `${i.user}` },
-            { name: "📅 Даты", value: dates },
-            { name: "📝 Причина", value: reason },
-            { name: "📊 Статус", value: "⏳ Ожидание" }
-          ).setTimestamp();
-          
+          .addFields({ name: "👤 Игрок", value: `${i.user}` }, { name: "📅 Даты", value: dates }, { name: "📝 Причина", value: reason }, { name: "📊 Статус", value: "⏳ Ожидание" }).setTimestamp();
         const row = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId(`adm_watch_req_${i.user.id}`).setLabel("👀 Смотрю").setStyle(ButtonStyle.Secondary),
           new ButtonBuilder().setCustomId(`adm_ok_vac_${i.user.id}`).setLabel("✅ Принять").setStyle(ButtonStyle.Success),
           new ButtonBuilder().setCustomId(`adm_no_${i.user.id}`).setLabel("❌ Отклонить").setStyle(ButtonStyle.Danger)
         );
-        
         await log.send({ embeds: [emb], components: [row] });
       }
       return i.reply({ content: "🏖 Заявка на отпуск отправлена руководству!", ephemeral: true });

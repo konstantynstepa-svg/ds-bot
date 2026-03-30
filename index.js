@@ -372,7 +372,7 @@ client.on("interactionCreate", async i => {
       const embed = new EmbedBuilder()
         .setTitle("🛑 ПОЛУЧЕН ВАРН")
         .setColor("Red")
-        .setImage(randomGif) // <-- ТЕПЕРЬ ТУТ РАНДОМНАЯ ГИФКА
+        .setImage(randomGif) 
         .addFields(
           { name: "👮 Выдал", value: `${i.user}`, inline: true },
           { name: "👤 Нарушитель", value: `<@${targetId}>`, inline: true },
@@ -634,15 +634,14 @@ client.on("interactionCreate", async i => {
       return i.reply({ content: "Отчет отправлен!", ephemeral: true });
     }
 
-    // === ОБНОВЛЕННАЯ ЗАЯВКА ===
+    // === ОБНОВЛЕННАЯ ЗАЯВКА ПО НОВЫМ ТРЕБОВАНИЯМ ===
     if (i.isButton() && i.customId === "apply_start") {
       const modal = new ModalBuilder().setCustomId("modal_apply").setTitle("Анкета в семью");
       modal.addComponents(
-        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("a_nick_age_stat").setLabel("Ник, Возраст, Статик").setStyle(TextInputStyle.Short).setRequired(true)),
-        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("a_otkat").setLabel("Откат (ссылка на видео с арены/капта)").setStyle(TextInputStyle.Short).setRequired(true)),
-        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("a_tyaga").setLabel("Тяга (Уровень стрельбы)").setStyle(TextInputStyle.Short).setRequired(true)),
-        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("a_speshik").setLabel("Спешик (Опыт со спец. оружием)").setStyle(TextInputStyle.Short).setRequired(true)),
-        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("a_online").setLabel("Средний онлайн в день").setStyle(TextInputStyle.Short).setRequired(true))
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("a_nick_age_stat").setLabel("1. Ник, Возраст, Статик").setStyle(TextInputStyle.Short).setRequired(true)),
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("a_otkat_skills").setLabel("2. Откат, Спешик / Тяга").setStyle(TextInputStyle.Paragraph).setRequired(true)),
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("a_source").setLabel("3. Откуда узнал о семье?").setStyle(TextInputStyle.Short).setRequired(true)),
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("a_online").setLabel("4. Средний онлайн").setStyle(TextInputStyle.Short).setRequired(true))
       );
       return i.showModal(modal);
     }
@@ -652,9 +651,8 @@ client.on("interactionCreate", async i => {
       const emb = new EmbedBuilder().setTitle("📩 НОВАЯ ЗАЯВКА").setColor("#ff0000").addFields(
         { name: "👤 Игрок", value: `${i.user}` }, 
         { name: "📝 Ник / Возраст / Статик", value: i.fields.getTextInputValue("a_nick_age_stat") }, 
-        { name: "🎬 Откат", value: i.fields.getTextInputValue("a_otkat") }, 
-        { name: "🔫 Тяга", value: i.fields.getTextInputValue("a_tyaga") }, 
-        { name: "🧨 Спешик", value: i.fields.getTextInputValue("a_speshik") }, 
+        { name: "🎬 Откат и Навыки", value: i.fields.getTextInputValue("a_otkat_skills") }, 
+        { name: "🌍 Откуда узнал", value: i.fields.getTextInputValue("a_source") }, 
         { name: "🕒 Онлайн", value: i.fields.getTextInputValue("a_online") }, 
         { name: "📊 Статус", value: "⏳ Ожидание" }
       ).setTimestamp();
@@ -713,7 +711,6 @@ client.on("interactionCreate", async i => {
 
   } catch (e) { 
     console.error("Ошибка взаимодействия:", e); 
-    // На случай, если бот не успел ответить на взаимодействие:
     if(!i.replied && !i.deferred) await i.reply({ content: "❌ Произошла ошибка. Попробуй еще раз.", ephemeral: true }).catch(()=>{});
   }
 });

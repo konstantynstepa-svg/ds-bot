@@ -54,8 +54,15 @@ const CAPT_CONFIG = {
 const WARN_CONFIG = {
   WARN_CMD_CHANNEL: "1480226568449036390",  
   WORK_CHANNEL: "1480226737718558805",      
-  APPEAL_CHANNEL: "1487295596787400724",    // Канал для ОБЖ
-  IMAGE_URL: "https://cdn.discordapp.com/attachments/737990746086441041/1469395625849257994/3330ded1-da51-47f9-a7d7-dee6d1bdc918.png?ex=69c81a51&is=69c6c8d1&hm=0bd530608fad4b8ad05de3506c749490ed9eed1a1c56ac5697acd4dd0faa7504&",
+  APPEAL_CHANNEL: "1487295596787400724",    
+  IMAGE_URL: "https://cdn.discordapp.com/attachments/737990746086441041/1469395625849257994/3330ded1-da51-47f9-a7d7-dee6d1bdc918.png",
+  // Массив агрессивных/сигнальных гифок для выдачи варнов (выбираются случайно)
+  WARN_GIFS: [
+    "https://media1.tenor.com/m/8YvUv1oHupcAAAAC/warning-error.gif",
+    "https://media1.tenor.com/m/lXkEtyd1i7QAAAAC/alert-siren.gif",
+    "https://media1.tenor.com/m/p13Qp7mKkFEAAAAd/warning-flashing.gif",
+    "https://media1.tenor.com/m/xR3q2m_iT3QAAAAC/police-siren.gif"
+  ],
   MANAGEMENT_ROLES: [
     "1056945517835341936",
     "1479566887519129781",
@@ -110,7 +117,6 @@ const client = new Client({
 client.once("ready", () => {
   console.log(`🚀 Бот ${client.user.tag} готов! Логи -> ${CONFIG.MAIN_LOG_CHANNEL}`);
 
-  // Проверяем варны каждые 5 минут
   setInterval(async () => {
     const now = Date.now();
     for (const [uid, warnData] of Object.entries(db.activeWarns)) {
@@ -119,30 +125,26 @@ client.once("ready", () => {
       const guild = client.guilds.cache.first();
       if (!guild) continue;
       const member = await guild.members.fetch(uid).catch(() => null);
-      if (!member) continue; // Вышел с сервера
+      if (!member) continue; 
 
-      // Если в отпуске — пропускаем таймеры
       if (member.roles.cache.has(CONFIG.VACATION_ROLE)) continue;
 
       const elapsed = now - warnData.timestamp;
 
       if (warnData.level === 1) {
-        // 46 часов прошло (предупреждаем за 2 часа)
         if (elapsed >= 46 * 60 * 60 * 1000 && !warnData.notified) {
           warnData.notified = true; save();
           member.send("⏳ **Внимание!** У тебя осталось всего 2 часа, чтобы снять первый варн!").catch(()=>{});
         }
-        // 48 часов прошло (выдаем 2 варн)
         if (elapsed >= 48 * 60 * 60 * 1000) {
           warnData.level = 2;
-          warnData.timestamp = now; // Перезапускаем таймер
+          warnData.timestamp = now;
           warnData.notified = false;
           save();
           await member.roles.add(WARN_CONFIG.WARN_ROLE_2).catch(()=>{});
           member.send("🚨 **Ты проигнорировал снятие варна!** Тебе выдан 2-й Варн. У тебя есть еще 48 часов, иначе ты будешь исключен.").catch(()=>{});
         }
       } else if (warnData.level === 2) {
-        // Прошло еще 48 часов с момента выдачи 2 варна (96 в сумме) -> Запрашиваем кик
         if (elapsed >= 48 * 60 * 60 * 1000) {
           warnData.level = 'pending_kick'; save();
           const logCh = await guild.channels.fetch(CONFIG.MAIN_LOG_CHANNEL).catch(()=>null);
@@ -260,7 +262,6 @@ client.on("messageCreate", async msg => {
     msg.author.send(`✅ Оповещено пользователей: ~${membersToAlert.size}`).catch(()=>{});
   }
 
-  // === ВАРНЫ И ОБЖАЛОВАНИЯ ===
   if (msg.content === "!варн") {
     const hasMgmtRole = WARN_CONFIG.MANAGEMENT_ROLES.some(r => msg.member.roles.cache.has(r));
     if (!hasMgmtRole) return msg.reply("❌ У вас нет прав для управления варнами.");
@@ -285,8 +286,6 @@ client.on("messageCreate", async msg => {
 /* ================= [ ВЗАИМОДЕЙСТВИЯ ] ================= */
 client.on("interactionCreate", async i => {
   try {
-
-    // === КНОПКИ КИКА ПОСЛЕ 2 ВАРНОВ ===
     if (i.isButton() && i.customId.startsWith("kick_")) {
       const [ , action, uid ] = i.customId.split("_");
       const target = await i.guild.members.fetch(uid).catch(()=>null);
@@ -306,7 +305,6 @@ client.on("interactionCreate", async i => {
       }
     }
 
-    // === ГЛОБАЛЬНОЕ ОБЖАЛОВАНИЕ (!ОБЖ) ===
     if (i.isButton() && i.customId === "appeal_start_btn") {
       const modal = new ModalBuilder().setCustomId("modal_appeal_global").setTitle("Форма обжалования");
       modal.addComponents(
@@ -341,7 +339,6 @@ client.on("interactionCreate", async i => {
       return i.reply({ content: "✅ Ваше обжалование отправлено руководству!", ephemeral: true });
     }
 
-    // === ВЫДАЧА ВАРНОВ ===
     if (i.isButton() && i.customId === "warn_issue_btn") {
       const hasMgmtRole = WARN_CONFIG.MANAGEMENT_ROLES.some(r => i.member.roles.cache.has(r));
       if (!hasMgmtRole) return i.reply({ content: "❌ Куда жмешь? У тебя нет прав выписывать варны!", ephemeral: true });
@@ -362,18 +359,20 @@ client.on("interactionCreate", async i => {
 
       const targetMember = await i.guild.members.fetch(targetId).catch(()=>null);
       if (targetMember) {
-        // Выдаем роль и ставим таймер
         await targetMember.roles.add(WARN_CONFIG.WARN_ROLE_1).catch(()=>{});
         db.activeWarns[targetId] = { level: 1, timestamp: Date.now(), notified: false };
         save();
         targetMember.send(`⚠️ Вы получили варн!\n**Причина:** ${reason}\n\nУ тебя есть 2 дня, чтобы снять этот варн, иначе последствия будут хуже.`).catch(()=>{});
       }
 
+      // Выбираем случайную гифку из массива для устрашения
+      const randomGif = WARN_CONFIG.WARN_GIFS[Math.floor(Math.random() * WARN_CONFIG.WARN_GIFS.length)];
+
       const otrabotkaChannel = await i.guild.channels.fetch(WARN_CONFIG.WORK_CHANNEL);
       const embed = new EmbedBuilder()
         .setTitle("🛑 ПОЛУЧЕН ВАРН")
         .setColor("Red")
-        .setImage(WARN_CONFIG.IMAGE_URL)
+        .setImage(randomGif) // <-- ТЕПЕРЬ ТУТ РАНДОМНАЯ ГИФКА
         .addFields(
           { name: "👮 Выдал", value: `${i.user}`, inline: true },
           { name: "👤 Нарушитель", value: `<@${targetId}>`, inline: true },
@@ -390,7 +389,6 @@ client.on("interactionCreate", async i => {
       return i.reply({ content: `✅ Варн успешно выдан игроку <@${targetId}>.`, ephemeral: true });
     }
 
-    // === СНЯТИЕ ВАРНА КНОПКАМИ ===
     if (i.isButton() && i.customId.startsWith("w_")) {
       const action = i.customId.split("_").slice(0, 3).join("_"); 
       const targetId = i.customId.split("_").pop();
@@ -457,7 +455,6 @@ client.on("interactionCreate", async i => {
       }
     }
 
-    // Модалка отработки варна заданием
     if (i.isModalSubmit() && i.customId.startsWith("modal_w_task_")) {
       const log = await i.guild.channels.fetch(CONFIG.MAIN_LOG_CHANNEL);
       const emb = new EmbedBuilder().setTitle("🛠 ЗАПРОС НА СНЯТИЕ ВАРНА (ЗАДАНИЕ)").setColor("Blue").addFields({ name: "👤 Игрок", value: `${i.user}` }, { name: "🔗 Док-ва", value: i.fields.getTextInputValue("proof") }, { name: "📊 Статус", value: "⏳ Ожидание проверки руководством" }).setTimestamp();
@@ -543,7 +540,21 @@ client.on("interactionCreate", async i => {
       return i.reply({ content: "Статус обновлен на: Отказано.", ephemeral: true });
     }
 
-    // === СТАРЫЕ ВЗАИМОДЕЙСТВИЯ (Капты, Баллы, AFK) ОСТАЛИСЬ БЕЗ ИЗМЕНЕНИЙ НИЖЕ ===
+    // === БРОНЕБОЙНАЯ ЛОГИКА КАПТОВ ===
+    const getTier = (member) => {
+      if (!member || !member.roles) return "tier3";
+      if (member.roles.cache.has(CAPT_CONFIG.TIERS["1"])) return "tier1";
+      if (member.roles.cache.has(CAPT_CONFIG.TIERS["2"])) return "tier2";
+      return "tier3";
+    };
+
+    const removeFromCapt = (id) => {
+      currentCapt.tier1 = currentCapt.tier1.filter(u => u !== id);
+      currentCapt.tier2 = currentCapt.tier2.filter(u => u !== id);
+      currentCapt.tier3 = currentCapt.tier3.filter(u => u !== id);
+      currentCapt.subs = currentCapt.subs.filter(u => u !== id);
+    };
+
     if (i.isButton() && i.customId === "capt_remove") {
       const hasPerm = CAPT_CONFIG.REMOVE_ROLES.some(r => i.member.roles.cache.has(r));
       if (!hasPerm) {
@@ -554,14 +565,26 @@ client.on("interactionCreate", async i => {
       modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("target_id").setLabel("Discord ID").setStyle(TextInputStyle.Short).setRequired(true)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("reason").setLabel("Причина").setStyle(TextInputStyle.Short).setRequired(true)));
       return i.showModal(modal);
     }
+
     if (i.isButton() && i.customId.startsWith("capt_")) {
       if (i.customId !== "capt_force" && !i.member.roles.cache.has(CONFIG.ROLE_ACCEPTED_ID)) return i.reply({ content: "❌ Вы не состоите в семье!", ephemeral: true });
       const userId = i.user.id;
-      const removeFromCapt = (id) => { currentCapt.tier1 = currentCapt.tier1.filter(u=>u!==id); currentCapt.tier2 = currentCapt.tier2.filter(u=>u!==id); currentCapt.tier3 = currentCapt.tier3.filter(u=>u!==id); currentCapt.subs = currentCapt.subs.filter(u=>u!==id); };
-      const getTier = (m) => m.roles.cache.has(CAPT_CONFIG.TIERS["1"]) ? "tier1" : m.roles.cache.has(CAPT_CONFIG.TIERS["2"]) ? "tier2" : "tier3";
-      if (i.customId === "capt_plus") { removeFromCapt(userId); currentCapt[getTier(i.member)].push(userId); await i.update({ embeds: [buildCaptEmbed()] }); }
-      if (i.customId === "capt_sub") { removeFromCapt(userId); currentCapt.subs.push(userId); await i.update({ embeds: [buildCaptEmbed()] }); }
-      if (i.customId === "capt_minus") { removeFromCapt(userId); await i.update({ embeds: [buildCaptEmbed()] }); }
+      
+      if (i.customId === "capt_plus") { 
+        removeFromCapt(userId); 
+        const tier = getTier(i.member);
+        if(!currentCapt[tier].includes(userId)) currentCapt[tier].push(userId); 
+        await i.update({ embeds: [buildCaptEmbed()] }); 
+      }
+      if (i.customId === "capt_sub") { 
+        removeFromCapt(userId); 
+        if(!currentCapt.subs.includes(userId)) currentCapt.subs.push(userId); 
+        await i.update({ embeds: [buildCaptEmbed()] }); 
+      }
+      if (i.customId === "capt_minus") { 
+        removeFromCapt(userId); 
+        await i.update({ embeds: [buildCaptEmbed()] }); 
+      }
       if (i.customId === "capt_force") {
         if (!CAPT_CONFIG.MANAGEMENT_ROLES.some(r => i.member.roles.cache.has(r))) return i.reply({ content: "❌ У вас нет прав.", ephemeral: true });
         const modal = new ModalBuilder().setCustomId("modal_capt_force").setTitle("Вписать участника");
@@ -569,32 +592,39 @@ client.on("interactionCreate", async i => {
         return i.showModal(modal);
       }
     }
+
     if (i.isModalSubmit() && i.customId === "modal_capt_force") {
       const targetId = i.fields.getTextInputValue("target_id");
       try {
         const tm = await i.guild.members.fetch(targetId);
-        currentCapt.tier1 = currentCapt.tier1.filter(u=>u!==targetId); currentCapt.tier2 = currentCapt.tier2.filter(u=>u!==targetId); currentCapt.tier3 = currentCapt.tier3.filter(u=>u!==targetId); currentCapt.subs = currentCapt.subs.filter(u=>u!==targetId);
-        currentCapt[tm.roles.cache.has(CAPT_CONFIG.TIERS["1"])?"tier1":tm.roles.cache.has(CAPT_CONFIG.TIERS["2"])?"tier2":"tier3"].push(targetId);
+        removeFromCapt(targetId); // Чистим айди перед добавлением
+        const tier = getTier(tm);
+        if(!currentCapt[tier].includes(targetId)) currentCapt[tier].push(targetId);
         await i.message.edit({ embeds: [buildCaptEmbed()] });
         return i.reply({ content: `✅ Пользователь вписан!`, ephemeral: true });
-      } catch (err) { return i.reply({ content: "❌ Не найден ID.", ephemeral: true }); }
+      } catch (err) { return i.reply({ content: "❌ Не найден ID на сервере.", ephemeral: true }); }
     }
+
     if (i.isModalSubmit() && i.customId === "modal_capt_remove") {
-      const targetId = i.fields.getTextInputValue("target_id"); const reason = i.fields.getTextInputValue("reason");
-      currentCapt.tier1 = currentCapt.tier1.filter(u=>u!==targetId); currentCapt.tier2 = currentCapt.tier2.filter(u=>u!==targetId); currentCapt.tier3 = currentCapt.tier3.filter(u=>u!==targetId); currentCapt.subs = currentCapt.subs.filter(u=>u!==targetId);
+      const targetId = i.fields.getTextInputValue("target_id"); 
+      const reason = i.fields.getTextInputValue("reason");
+      removeFromCapt(targetId);
       await i.message.edit({ embeds: [buildCaptEmbed()] });
       return i.reply({ content: `🧹 Игрок <@${targetId}> удален. Причина: ${reason}`, ephemeral: true });
     }
+
     if (i.isButton() && i.customId === "earn_btn") {
       const sel = new StringSelectMenuBuilder().setCustomId("earn_select").setPlaceholder("Что ты сделал?");
       EARN_OPTIONS.forEach(o => sel.addOptions(new StringSelectMenuOptionBuilder().setLabel(o.label).setValue(o.value)));
       return i.reply({ content: "Выбери:", components: [new ActionRowBuilder().addComponents(sel)], ephemeral: true });
     }
+
     if (i.isStringSelectMenu() && i.customId === "earn_select") {
       const modal = new ModalBuilder().setCustomId(`me_${i.values[0]}`).setTitle("Отчет");
       modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("e1").setLabel("Ник/статик").setStyle(TextInputStyle.Short)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("e2").setLabel("Док-ва").setStyle(TextInputStyle.Short)));
       return i.showModal(modal);
     }
+
     if (i.isModalSubmit() && i.customId.startsWith("me_")) {
       const taskKey = i.customId.replace("me_", ""); const task = EARN_OPTIONS.find(o => o.value === taskKey); const pts = taskKey.split("_")[1];
       const log = await i.guild.channels.fetch(CONFIG.MAIN_LOG_CHANNEL);
@@ -603,23 +633,43 @@ client.on("interactionCreate", async i => {
       await log.send({ embeds: [emb], components: [row] });
       return i.reply({ content: "Отчет отправлен!", ephemeral: true });
     }
+
+    // === ОБНОВЛЕННАЯ ЗАЯВКА ===
     if (i.isButton() && i.customId === "apply_start") {
-      const modal = new ModalBuilder().setCustomId("modal_apply").setTitle("Анкета");
-      modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("a1").setLabel("Ник/Возраст").setStyle(TextInputStyle.Short)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("a2").setLabel("Онлайн/уровень").setStyle(TextInputStyle.Short)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("a3").setLabel("Прошлые семьи").setStyle(TextInputStyle.Paragraph)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("a4").setLabel("Откуда узнал").setStyle(TextInputStyle.Short)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("a5").setLabel("Навыки").setStyle(TextInputStyle.Paragraph)));
+      const modal = new ModalBuilder().setCustomId("modal_apply").setTitle("Анкета в семью");
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("a_nick_age_stat").setLabel("Ник, Возраст, Статик").setStyle(TextInputStyle.Short).setRequired(true)),
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("a_otkat").setLabel("Откат (ссылка на видео с арены/капта)").setStyle(TextInputStyle.Short).setRequired(true)),
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("a_tyaga").setLabel("Тяга (Уровень стрельбы)").setStyle(TextInputStyle.Short).setRequired(true)),
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("a_speshik").setLabel("Спешик (Опыт со спец. оружием)").setStyle(TextInputStyle.Short).setRequired(true)),
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("a_online").setLabel("Средний онлайн в день").setStyle(TextInputStyle.Short).setRequired(true))
+      );
       return i.showModal(modal);
     }
+
     if (i.isModalSubmit() && i.customId === "modal_apply") {
       const log = await i.guild.channels.fetch(CONFIG.MAIN_LOG_CHANNEL);
-      const emb = new EmbedBuilder().setTitle("📩 НОВАЯ ЗАЯВКА").setColor("#ff0000").addFields({ name: "👤", value: `${i.user}` }, { name: "📝", value: i.fields.getTextInputValue("a1") }, { name: "🕒", value: i.fields.getTextInputValue("a2") }, { name: "🏠", value: i.fields.getTextInputValue("a3") }, { name: "🌍", value: i.fields.getTextInputValue("a4") }, { name: "🔫", value: i.fields.getTextInputValue("a5") }, { name: "📊", value: "⏳ Ожидание" }).setTimestamp();
+      const emb = new EmbedBuilder().setTitle("📩 НОВАЯ ЗАЯВКА").setColor("#ff0000").addFields(
+        { name: "👤 Игрок", value: `${i.user}` }, 
+        { name: "📝 Ник / Возраст / Статик", value: i.fields.getTextInputValue("a_nick_age_stat") }, 
+        { name: "🎬 Откат", value: i.fields.getTextInputValue("a_otkat") }, 
+        { name: "🔫 Тяга", value: i.fields.getTextInputValue("a_tyaga") }, 
+        { name: "🧨 Спешик", value: i.fields.getTextInputValue("a_speshik") }, 
+        { name: "🕒 Онлайн", value: i.fields.getTextInputValue("a_online") }, 
+        { name: "📊 Статус", value: "⏳ Ожидание" }
+      ).setTimestamp();
+      
       const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`adm_watch_req_${i.user.id}`).setLabel("👀 Смотрю").setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`adm_ok_fam_${i.user.id}`).setLabel("✅ Принять").setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId(`adm_no_${i.user.id}`).setLabel("❌ Отклонить").setStyle(ButtonStyle.Danger));
       await log.send({ embeds: [emb], components: [row] });
-      return i.reply({ content: "✅ Отправлено!", ephemeral: true });
+      return i.reply({ content: "✅ Заявка отправлена!", ephemeral: true });
     }
+
     if (i.isButton() && i.customId === "rankup_btn") {
       const modal = new ModalBuilder().setCustomId("modal_rankup").setTitle("Повышение");
       modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("r1").setLabel("Ник/статик").setStyle(TextInputStyle.Short)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("r2").setLabel("Видео").setStyle(TextInputStyle.Short)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("r3").setLabel("Ранг (3/4)").setStyle(TextInputStyle.Short)));
       return i.showModal(modal);
     }
+
     if (i.isModalSubmit() && i.customId === "modal_rankup") {
       const r = i.fields.getTextInputValue("r3"); const c = RANK_COSTS[r];
       if (!c || getPoints(i.user.id) < c) return i.reply({ content: `❌ Надо: ${c}`, ephemeral: true });
@@ -629,12 +679,15 @@ client.on("interactionCreate", async i => {
       await log.send({ embeds: [emb], components: [row] });
       return i.reply({ content: "Отправлено!", ephemeral: true });
     }
+
     if (i.isButton() && i.customId === "balance_btn") return i.reply({ content: `💎 Баланс: **${getPoints(i.user.id)}**`, ephemeral: true });
+    
     if (i.isButton() && i.customId === "afk_vacation") {
       const modal = new ModalBuilder().setCustomId("modal_vacation").setTitle("Отпуск");
       modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("v1").setLabel("Даты").setStyle(TextInputStyle.Short)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("v2").setLabel("Причина").setStyle(TextInputStyle.Paragraph)));
       return i.showModal(modal);
     }
+
     if (i.isModalSubmit() && i.customId === "modal_vacation") {
       const log = await i.guild.channels.fetch(CONFIG.AFK_LOG_CHANNEL).catch(() => null);
       if (log) {
@@ -644,11 +697,13 @@ client.on("interactionCreate", async i => {
       }
       return i.reply({ content: "🏖 Отправлено!", ephemeral: true });
     }
+
     if (i.isButton() && i.customId === "afk_on") {
         const rs = i.member.roles.cache.filter(r => r.id !== i.guild.id).map(r => r.id); afkdb.roles[i.user.id] = rs; saveAfk();
         for (const r of rs) await i.member.roles.remove(r).catch(() => {}); await i.member.roles.add(CONFIG.VACATION_ROLE).catch(() => {});
         return i.reply({ content: "🌙 AFK включен.", ephemeral: true });
     }
+
     if (i.isButton() && i.customId === "afk_off") {
         const s = afkdb.roles[i.user.id]; if (!s) return i.reply({ content: "❌ Вы не в AFK.", ephemeral: true });
         for (const r of s) await i.member.roles.add(r).catch(() => {}); await i.member.roles.remove(CONFIG.VACATION_ROLE).catch(() => {});
@@ -656,7 +711,11 @@ client.on("interactionCreate", async i => {
         return i.reply({ content: "✅ С возвращением!", ephemeral: true });
     }
 
-  } catch (e) { console.error("Ошибка взаимодействия:", e); }
+  } catch (e) { 
+    console.error("Ошибка взаимодействия:", e); 
+    // На случай, если бот не успел ответить на взаимодействие:
+    if(!i.replied && !i.deferred) await i.reply({ content: "❌ Произошла ошибка. Попробуй еще раз.", ephemeral: true }).catch(()=>{});
+  }
 });
 
 client.login(process.env.TOKEN);

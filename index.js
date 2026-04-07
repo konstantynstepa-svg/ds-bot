@@ -25,8 +25,8 @@ const CONFIG = {
   AFK_LOG_CHANNEL: "1480228317222277171",    
   VACATION_ROLE: "1479988454484869271",      
   IMAGE: "https://cdn.discordapp.com/attachments/737990746086441041/1469395625849257994/3330ded1-da51-47f9-a7d7-dee6d1bdc918.png",
-  TIER_CHANNEL_ID: "1469394398327345314", // <-- Твой новый канал для тира
-  TIER_IMAGE: "https://cdn.discordapp.com/attachments/737990746086441041/1469395625849257994/3330ded1-da51-47f9-a7d7-dee6d1bdc918.png" // Ссылка на фото для тира (можешь заменить на другую)
+  TIER_CHANNEL_ID: "1490912215341989978", // <-- Обновленный ID канала для тира
+  TIER_IMAGE: "https://cdn.discordapp.com/attachments/737990746086441041/1469395625849257994/3330ded1-da51-47f9-a7d7-dee6d1bdc918.png" // Ссылка на фото для тира
 };
 
 // === НАСТРОЙКИ ДЛЯ КАПТОВ ===

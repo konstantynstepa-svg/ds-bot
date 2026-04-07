@@ -25,7 +25,8 @@ const CONFIG = {
   AFK_LOG_CHANNEL: "1480228317222277171",    
   VACATION_ROLE: "1479988454484869271",      
   IMAGE: "https://cdn.discordapp.com/attachments/737990746086441041/1469395625849257994/3330ded1-da51-47f9-a7d7-dee6d1bdc918.png",
-  TIER_CHANNEL_ID: "1490912215341989978" // Канал для заявки на тир
+  TIER_CHANNEL_ID: "1469394398327345314", // <-- Твой новый канал для тира
+  TIER_IMAGE: "https://cdn.discordapp.com/attachments/737990746086441041/1469395625849257994/3330ded1-da51-47f9-a7d7-dee6d1bdc918.png" // Ссылка на фото для тира (можешь заменить на другую)
 };
 
 // === НАСТРОЙКИ ДЛЯ КАПТОВ ===
@@ -206,23 +207,24 @@ function buildCaptEmbed() {
 client.on("messageCreate", async msg => {
   if (msg.author.bot) return;
 
+  const content = msg.content.toLowerCase();
+
   // НОВОСТЬ (Рассылка)
-  if (msg.content.startsWith("!новость")) {
-    if (!msg.member.roles.cache.has(CONFIG.ROLE_LEADER_ID) && !CAPT_CONFIG.MANAGEMENT_ROLES.some(r => msg.member.roles.cache.has(r))) return msg.reply("❌ Нет прав для рассылки новостей.");
+  if (content.startsWith("!новость")) {
+    msg.delete().catch(()=>{});
+    if (!msg.member.roles.cache.has(CONFIG.ROLE_LEADER_ID) && !CAPT_CONFIG.MANAGEMENT_ROLES.some(r => msg.member.roles.cache.has(r))) return msg.author.send("❌ Нет прав для рассылки новостей.").catch(()=>{});
     const text = msg.content.slice(9).trim();
-    if (!text) return msg.reply("Используй: !новость [текст]");
+    if (!text) return msg.author.send("Используй: !новость [текст]").catch(()=>{});
 
     const embed = new EmbedBuilder().setTitle("📢 ВАЖНАЯ НОВОСТЬ СЕМЬИ").setDescription(text).setColor("Red").setImage(CONFIG.IMAGE).setTimestamp();
     await msg.guild.members.fetch();
     const membersToAlert = msg.guild.members.cache.filter(m => m.roles.cache.has(CONFIG.ROLE_ACCEPTED_ID) && !m.user.bot);
     
-    let sentCount = 0;
-    msg.channel.send(`🚀 Начинаю рассылку новости ${membersToAlert.size} участникам...`);
+    msg.author.send(`🚀 Начинаю рассылку новости ${membersToAlert.size} участникам...`).catch(()=>{});
     
     membersToAlert.forEach(async (member) => { 
       try { 
         await member.send({ embeds: [embed] }); 
-        sentCount++;
       } catch (err) { 
         notifyBlocked(msg.guild, member);
       } 
@@ -231,27 +233,31 @@ client.on("messageCreate", async msg => {
   }
 
   // ЗАЯВКА НА ТИР
-  if ((msg.content === "!тир" || msg.content.toLowerCase() === "!tier") && msg.channel.id === CONFIG.TIER_CHANNEL_ID) {
+  if (content === "!тир" || content === "!tier") {
+    msg.delete().catch(()=>{});
+    if (msg.channel.id !== CONFIG.TIER_CHANNEL_ID) return;
     const embed = new EmbedBuilder()
         .setTitle("🎯 ПОЛУЧЕНИЕ ТИРА")
         .setDescription("Нажмите кнопку ниже, чтобы подать заявку на получение тира.")
-        .setImage(CONFIG.IMAGE)
+        .setImage(CONFIG.TIER_IMAGE)
         .setColor("#8A2BE2");
     const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("tier_start_btn").setLabel("Получить тир").setStyle(ButtonStyle.Primary));
     msg.channel.send({ embeds: [embed], components: [row] });
     return;
   }
 
-  if (msg.content.startsWith("!give")) {
-    if (!msg.member.roles.cache.has(CONFIG.ROLE_LEADER_ID)) return msg.reply("❌ Нет прав");
+  if (content.startsWith("!give")) {
+    msg.delete().catch(()=>{});
+    if (!msg.member.roles.cache.has(CONFIG.ROLE_LEADER_ID)) return msg.author.send("❌ Нет прав").catch(()=>{});
     const user = msg.mentions.users.first();
     const amount = parseInt(msg.content.split(" ")[2]);
-    if (!user || isNaN(amount)) return msg.reply("Используй: !give @user 50");
+    if (!user || isNaN(amount)) return msg.author.send("Используй: !give @user 50").catch(()=>{});
     addPoints(user.id, amount);
-    return msg.reply(`✅ Выдано ${amount} 💎 игроку ${user}`);
+    return msg.author.send(`✅ Выдано ${amount} 💎 игроку ${user}`).catch(()=>{});
   }
 
-  if (msg.content === "!menu") {
+  if (content === "!menu" || content === "!меню") {
+    msg.delete().catch(()=>{});
     const embed = new EmbedBuilder()
       .setTitle("💎 СИСТЕМА БАЛЛОВ И ПОВЫШЕНИЯ")
       .setDescription(`📜 **Цены на повышение:**\n🔹 2 ➔ 3 ранг: **${RANK_COSTS["3"]} 💎**\n🔹 3 ➔ 4 ранг: **${RANK_COSTS["4"]} 💎**`)
@@ -264,9 +270,12 @@ client.on("messageCreate", async msg => {
       new ButtonBuilder().setCustomId("rankup_btn").setLabel("Повыситься").setStyle(ButtonStyle.Success),
     );
     msg.channel.send({ embeds: [embed], components: [row] });
+    return;
   }
 
-  if (msg.content === "!заявка" && msg.channel.id === CONFIG.COMMAND_CHANNEL_ID) {
+  if (content === "!заявка") {
+    msg.delete().catch(()=>{});
+    if (msg.channel.id !== CONFIG.COMMAND_CHANNEL_ID) return;
     const embed = new EmbedBuilder()
         .setTitle("📝 ЗАЯВКА В СЕМЬЮ")
         .setDescription("Нажми на кнопку ниже, чтобы заполнить анкету.")
@@ -274,9 +283,11 @@ client.on("messageCreate", async msg => {
         .setColor("#ff0000");
     const btn = new ButtonBuilder().setCustomId("apply_start").setLabel("Подать заявку").setStyle(ButtonStyle.Danger);
     msg.channel.send({ embeds: [embed], components: [new ActionRowBuilder().addComponents(btn)] });
+    return;
   }
 
-  if (msg.content === "!afk") {
+  if (content === "!afk" || content === "!афк") {
+    msg.delete().catch(()=>{});
     const afkEmbed = new EmbedBuilder()
       .setTitle("💤 Управление статусом AFK / Отпуск")
       .setDescription("Выберите нужное действие:\n\n" +
@@ -291,11 +302,13 @@ client.on("messageCreate", async msg => {
       new ButtonBuilder().setCustomId("afk_off").setLabel("✅ Выйти").setStyle(ButtonStyle.Success)
     );
     msg.channel.send({ embeds: [afkEmbed], components: [row] });
+    return;
   }
 
-  if (msg.content === "!startcapt") {
+  if (content === "!startcapt") {
+    msg.delete().catch(()=>{});
     const hasMgmtRole = CAPT_CONFIG.MANAGEMENT_ROLES.some(r => msg.member.roles.cache.has(r));
-    if (!hasMgmtRole) return msg.reply("❌ У вас нет прав для создания сбора на капт.");
+    if (!hasMgmtRole) return msg.author.send("❌ У вас нет прав для создания сбора на капт.").catch(()=>{});
     currentCapt = { tier1: [], tier2: [], tier3: [], subs: [] };
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId("capt_plus").setLabel("Плюс на капт").setStyle(ButtonStyle.Success),
@@ -305,31 +318,34 @@ client.on("messageCreate", async msg => {
       new ButtonBuilder().setCustomId("capt_remove").setLabel("Удалить с капта").setStyle(ButtonStyle.Danger)
     );
     msg.channel.send({ embeds: [buildCaptEmbed()], components: [row] });
-    msg.delete().catch(()=>{});
+    return;
   }
 
-  if (msg.content.startsWith("!капт")) {
+  if (content.startsWith("!капт")) {
+    msg.delete().catch(()=>{});
     const hasMgmtRole = CAPT_CONFIG.MANAGEMENT_ROLES.some(r => msg.member.roles.cache.has(r));
     if (!hasMgmtRole) return; 
-    msg.delete().catch(()=>{});
     const time = msg.content.split(" ").slice(1).join(" ") || "скоро";
     await msg.guild.members.fetch();
     const membersToAlert = msg.guild.members.cache.filter(m => m.roles.cache.has(CONFIG.ROLE_ACCEPTED_ID) && !m.user.bot);
     const alertEmbed = new EmbedBuilder().setTitle("🚨 ВНИМАНИЕ: КАПТ!").setDescription(`Сбор в войсе через: **${time}**\nЗаходи в игру!`).setImage(CAPT_CONFIG.IMAGE_URL).setColor("Red");
     membersToAlert.forEach(async (member) => { try { await member.send({ embeds: [alertEmbed] }); } catch (err) { notifyBlocked(msg.guild, member); } });
     msg.author.send(`✅ Оповещено пользователей: ~${membersToAlert.size}`).catch(()=>{});
+    return;
   }
 
-  if (msg.content === "!варн") {
+  if (content === "!варн") {
+    msg.delete().catch(()=>{});
     const hasMgmtRole = WARN_CONFIG.MANAGEMENT_ROLES.some(r => msg.member.roles.cache.has(r));
-    if (!hasMgmtRole) return msg.reply("❌ У вас нет прав для управления варнами.");
+    if (!hasMgmtRole) return msg.author.send("❌ У вас нет прав для управления варнами.").catch(()=>{});
     const embed = new EmbedBuilder().setTitle("⚠️ Панель управления Варнами").setDescription("Нажмите кнопку ниже, чтобы выписать игроку варн.").setImage(WARN_CONFIG.IMAGE_URL).setColor("DarkRed");
     const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("warn_issue_btn").setLabel("Выдать варн").setStyle(ButtonStyle.Danger));
     msg.channel.send({ embeds: [embed], components: [row] });
-    msg.delete().catch(()=>{});
+    return;
   }
 
-  if (msg.content === "!ОБЖ") {
+  if (content === "!обж") {
+    msg.delete().catch(()=>{});
     const embed = new EmbedBuilder()
       .setTitle("⚖️ ОБЖАЛОВАНИЕ ВАРНА")
       .setDescription("Если вы считаете, что вам выдали варн не по правилам или по ошибке, нажмите на кнопку ниже и заполните форму.")
@@ -337,7 +353,7 @@ client.on("messageCreate", async msg => {
       .setColor("Orange");
     const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("appeal_start_btn").setLabel("Подать обжалование").setStyle(ButtonStyle.Primary));
     msg.channel.send({ embeds: [embed], components: [row] });
-    msg.delete().catch(()=>{});
+    return;
   }
 });
 
@@ -430,7 +446,7 @@ client.on("interactionCreate", async i => {
     }
 
     if (i.isModalSubmit() && i.customId === "modal_appeal_global") {
-      const appealChannel = await i.guild.channels.fetch(CONFIG.MAIN_LOG_CHANNEL); // <-- Изменено на главный лог-канал
+      const appealChannel = await i.guild.channels.fetch(CONFIG.MAIN_LOG_CHANNEL);
       const emb = new EmbedBuilder()
         .setTitle("⚖️ НОВОЕ ОБЖАЛОВАНИЕ ВАРНА")
         .setColor("Orange")
@@ -497,7 +513,6 @@ client.on("interactionCreate", async i => {
         new ButtonBuilder().setCustomId(`w_rem_pts_${targetId}`).setLabel(`Снять за ${WARN_CONFIG.REMOVE_COST} баллов`).setStyle(ButtonStyle.Primary)
       );
 
-      // Сохраняем сообщение и создаем ветку для общения
       const warnMsg = await otrabotkaChannel.send({ content: `<@${targetId}>, у тебя проблемы!`, embeds: [embed], components: [row] });
       
       try {
@@ -551,7 +566,7 @@ client.on("interactionCreate", async i => {
           setWarnCooldown(i.user.id); 
           await i.member.roles.remove([WARN_CONFIG.WARN_ROLE_1, WARN_CONFIG.WARN_ROLE_2]).catch(()=>{});
           
-          await removeWarnMessage(i.guild, i.user.id); // Удаляем варн из канала отработок
+          await removeWarnMessage(i.guild, i.user.id); 
           delete db.activeWarns[i.user.id]; save();
 
           return i.reply({ content: `✅ Варн успешно снят! Списано ${WARN_CONFIG.REMOVE_COST} баллов. Сообщение отработки удалено.`, ephemeral: true });
@@ -619,9 +634,7 @@ client.on("interactionCreate", async i => {
           if (target) target.send("🎉 Ты принят в семью!").catch(() => notifyBlocked(i.guild, target));
         }
         else if (type === "tier") {
-          // Убираем все старые тиры перед выдачей нового
           await target?.roles.remove(Object.values(CAPT_CONFIG.TIERS)).catch(()=>{});
-          // Выдаем новый тир
           const roleId = CAPT_CONFIG.TIERS[val1];
           if (roleId) await target?.roles.add(roleId).catch(()=>{});
           if (target) target.send(`🎯 Тебе выдан **Tier ${val1}**!`).catch(() => notifyBlocked(i.guild, target));
@@ -640,7 +653,7 @@ client.on("interactionCreate", async i => {
              await target.roles.remove([WARN_CONFIG.WARN_ROLE_1, WARN_CONFIG.WARN_ROLE_2]).catch(()=>{});
              target.send("✅ Твой варн успешно снят (заявка/обжалование одобрены)!").catch(() => notifyBlocked(i.guild, target));
            }
-           await removeWarnMessage(i.guild, uid); // Удаление варна из отработок
+           await removeWarnMessage(i.guild, uid); 
            delete db.activeWarns[uid]; save();
         }
 
@@ -728,7 +741,7 @@ client.on("interactionCreate", async i => {
       const targetId = i.fields.getTextInputValue("target_id");
       try {
         const tm = await i.guild.members.fetch(targetId);
-        removeFromCapt(targetId); // Чистим айди перед добавлением
+        removeFromCapt(targetId); 
         const tier = getTier(tm);
         if(!currentCapt[tier].includes(targetId)) currentCapt[tier].push(targetId);
         await i.message.edit({ embeds: [buildCaptEmbed()] });

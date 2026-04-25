@@ -10,7 +10,6 @@ const {
   TextInputStyle,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
-  ThreadAutoArchiveDuration,
   REST,
   Routes,
   SlashCommandBuilder
@@ -18,7 +17,6 @@ const {
 const fs = require("fs");
 
 /* ================= [ НАСТРОЙКИ ] ================= */
-// Твоя новая общая картинка
 const NEW_IMAGE = "https://cdn.discordapp.com/attachments/1472664809400172648/1495428505628835910/2025-12-08_111532.png?ex=69ee1ed3&is=69eccd53&hm=b6fa875964d7610a821c10edc191bd30f081bddc73cbcfdb9af227251ff9bde6&";
 
 const CONFIG = {
@@ -57,31 +55,6 @@ const CAPT_CONFIG = {
     "1479592954795655312"
   ],
   OWNER_ID: "530064311310352415" 
-};
-
-// === НАСТРОЙКИ ДЛЯ ВАРНОВ И ОБЖАЛОВАНИЙ ===
-const WARN_CONFIG = {
-  WARN_CMD_CHANNEL: "1480226568449036390",  
-  WORK_CHANNEL: "1480226737718558805",      
-  IMAGE_URL: NEW_IMAGE,
-  WARN_GIFS: [
-    "https://media1.tenor.com/m/8YvUv1oHupcAAAAC/warning-error.gif",
-    "https://media1.tenor.com/m/lXkEtyd1i7QAAAAC/alert-siren.gif",
-    "https://media1.tenor.com/m/p13Qp7mKkFEAAAAd/warning-flashing.gif",
-    "https://media1.tenor.com/m/xR3q2m_iT3QAAAAC/police-siren.gif"
-  ],
-  MANAGEMENT_ROLES: [
-    "1056945517835341936",
-    "1479566887519129781",
-    "1480694180538744912",
-    "1479566383003205663",
-    "1480694256736669806"
-  ],
-  WARN_ROLE_1: "1479987457591218410", 
-  WARN_ROLE_2: "1479987547395325984", 
-  REMOVE_COST: 50,           
-  BRIBE_COST: 10,            
-  COOLDOWN_MS: 48 * 60 * 60 * 1000 
 };
 
 let currentCapt = { tier1: [], tier2: [], tier3: [], subs: [] };
@@ -127,18 +100,12 @@ const commands = [
   new SlashCommandBuilder()
     .setName('капт')
     .setDescription('Оповещение участников о капте')
-    .addStringOption(option => option.setName('time').setDescription('Время (через сколько сбор)').setRequired(false)),
-  new SlashCommandBuilder()
-    .setName('варн')
-    .setDescription('Открыть панель управления варнами'),
-  new SlashCommandBuilder()
-    .setName('обж')
-    .setDescription('Открыть панель обжалования варна')
+    .addStringOption(option => option.setName('time').setDescription('Время (через сколько сбор)').setRequired(false))
 ];
 
 /* ================= [ БАЗЫ ДАННЫХ ] ================= */
-let db = { points: {}, warnCooldowns: {}, activeWarns: {} }; 
-if (fs.existsSync("db.json")) db = Object.assign({ points: {}, warnCooldowns: {}, activeWarns: {} }, JSON.parse(fs.readFileSync("db.json")));
+let db = { points: {} }; 
+if (fs.existsSync("db.json")) db = Object.assign({ points: {} }, JSON.parse(fs.readFileSync("db.json")));
 let afkdb = { roles: {} };
 if (fs.existsSync("afkdb.json")) afkdb = JSON.parse(fs.readFileSync("afkdb.json"));
 
@@ -146,8 +113,6 @@ const save = () => fs.writeFileSync("db.json", JSON.stringify(db, null, 2));
 const saveAfk = () => fs.writeFileSync("afkdb.json", JSON.stringify(afkdb, null, 2));
 const addPoints = (id, amt) => { db.points[id] = (db.points[id] || 0) + amt; save(); };
 const getPoints = (id) => db.points[id] || 0;
-const setWarnCooldown = (id) => { db.warnCooldowns[id] = Date.now() + WARN_CONFIG.COOLDOWN_MS; save(); };
-const getWarnCooldown = (id) => db.warnCooldowns[id] || 0;
 
 const client = new Client({
   intents: [
@@ -165,20 +130,7 @@ const notifyBlocked = async (guild, member) => {
   } catch(e) {}
 };
 
-const removeWarnMessage = async (guild, uid) => {
-  const warnData = db.activeWarns[uid];
-  if (warnData && warnData.warnMsgId) {
-    try {
-      const workCh = await guild.channels.fetch(WARN_CONFIG.WORK_CHANNEL);
-      if (workCh) {
-        const wMsg = await workCh.messages.fetch(warnData.warnMsgId);
-        if (wMsg) await wMsg.delete();
-      }
-    } catch(e) { console.error("Не удалось удалить сообщение варна", e); }
-  }
-};
-
-/* ================= [ ГОТОВНОСТЬ И ТАЙМЕРЫ ] ================= */
+/* ================= [ ГОТОВНОСТЬ ] ================= */
 client.once("ready", async () => {
   console.log(`🚀 Бот ${client.user.tag} готов! Логи -> ${CONFIG.MAIN_LOG_CHANNEL}`);
 
@@ -188,59 +140,12 @@ client.once("ready", async () => {
     console.log('🔄 Начато обновление (/) команд...');
     await rest.put(
       Routes.applicationCommands(client.user.id),
-      { body: commands },
+      { body: commands.map(cmd => cmd.toJSON()) }, // ИСПРАВЛЕНО: добавлено .toJSON()
     );
     console.log('✅ Успешно загружены (/) команды.');
   } catch (error) {
     console.error('Ошибка при загрузке команд:', error);
   }
-
-  setInterval(async () => {
-    const now = Date.now();
-    for (const [uid, warnData] of Object.entries(db.activeWarns)) {
-      if (warnData.level === 'pending_kick') continue;
-
-      const guild = client.guilds.cache.first();
-      if (!guild) continue;
-      const member = await guild.members.fetch(uid).catch(() => null);
-      if (!member) continue; 
-
-      if (member.roles.cache.has(CONFIG.VACATION_ROLE)) continue;
-
-      const elapsed = now - warnData.timestamp;
-
-      if (warnData.level === 1) {
-        if (elapsed >= 46 * 60 * 60 * 1000 && !warnData.notified) {
-          warnData.notified = true; save();
-          member.send("⏳ **Внимание!** У тебя осталось всего 2 часа, чтобы снять первый варн!").catch(() => notifyBlocked(guild, member));
-        }
-        if (elapsed >= 48 * 60 * 60 * 1000) {
-          warnData.level = 2;
-          warnData.timestamp = now;
-          warnData.notified = false;
-          save();
-          await member.roles.add(WARN_CONFIG.WARN_ROLE_2).catch(()=>{});
-          member.send("🚨 **Ты проигнорировал снятие варна!** Тебе выдан 2-й Варн. У тебя есть еще 48 часов, иначе ты будешь исключен.").catch(() => notifyBlocked(guild, member));
-        }
-      } else if (warnData.level === 2) {
-        if (elapsed >= 48 * 60 * 60 * 1000) {
-          warnData.level = 'pending_kick'; save();
-          const logCh = await guild.channels.fetch(CONFIG.MAIN_LOG_CHANNEL).catch(()=>null);
-          if (logCh) {
-            const emb = new EmbedBuilder()
-              .setTitle("⚠️ ТРЕБУЕТСЯ КИК ИГРОКА")
-              .setDescription(`Игрок <@${uid}> проигнорировал 2 варна подряд и время вышло. Решайте его судьбу.`)
-              .setColor("Red");
-            const row = new ActionRowBuilder().addComponents(
-              new ButtonBuilder().setCustomId(`kick_ok_${uid}`).setLabel("✅ Принять (Кикнуть)").setStyle(ButtonStyle.Danger),
-              new ButtonBuilder().setCustomId(`kick_no_${uid}`).setLabel("❌ Отключить (Снять варны)").setStyle(ButtonStyle.Secondary)
-            );
-            logCh.send({ embeds: [emb], components: [row] });
-          }
-        }
-      }
-    }
-  }, 5 * 60 * 1000);
 });
 
 function buildCaptEmbed() {
@@ -377,26 +282,6 @@ client.on("interactionCreate", async i => {
         membersToAlert.forEach(async (member) => { try { await member.send({ embeds: [alertEmbed] }); } catch (err) { notifyBlocked(i.guild, member); } });
         return i.editReply(`✅ Оповещено пользователей: ~${membersToAlert.size}`);
       }
-
-      // /варн
-      if (commandName === 'варн') {
-        const hasMgmtRole = WARN_CONFIG.MANAGEMENT_ROLES.some(r => i.member.roles.cache.has(r));
-        if (!hasMgmtRole) return i.reply({ content: "❌ У вас нет прав для управления варнами.", ephemeral: true });
-        const embed = new EmbedBuilder().setTitle("⚠️ Панель управления Варнами").setDescription("Нажмите кнопку ниже, чтобы выписать игроку варн.").setImage(WARN_CONFIG.IMAGE_URL).setColor("DarkRed");
-        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("warn_issue_btn").setLabel("Выдать варн").setStyle(ButtonStyle.Danger));
-        return i.reply({ embeds: [embed], components: [row] });
-      }
-
-      // /обж
-      if (commandName === 'обж') {
-        const embed = new EmbedBuilder()
-          .setTitle("⚖️ ОБЖАЛОВАНИЕ ВАРНА")
-          .setDescription("Если вы считаете, что вам выдали варн не по правилам или по ошибке, нажмите на кнопку ниже и заполните форму.")
-          .setImage(WARN_CONFIG.IMAGE_URL)
-          .setColor("Orange");
-        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("appeal_start_btn").setLabel("Подать обжалование").setStyle(ButtonStyle.Primary));
-        return i.reply({ embeds: [embed], components: [row] });
-      }
     }
 
     // === ЗАЯВКА НА ТИР ===
@@ -451,199 +336,6 @@ client.on("interactionCreate", async i => {
       return i.reply({ content: "✅ Ваша заявка на тир отправлена руководству!", ephemeral: true });
     }
 
-    // === ОБРАБОТКА КИКА ИЗ-ЗА ВАРНОВ ===
-    if (i.isButton() && i.customId.startsWith("kick_")) {
-      const [ , action, uid ] = i.customId.split("_");
-      const target = await i.guild.members.fetch(uid).catch(()=>null);
-      
-      if (action === "ok") {
-        if (target) {
-          await target.send("Молодец сам этого добился в 2 семьи такое не будет удачи").catch(() => notifyBlocked(i.guild, target));
-          await target.kick("Проигнорировал 2 варна. Кикнут системой.").catch(()=>{});
-        }
-        await removeWarnMessage(i.guild, uid);
-        delete db.activeWarns[uid]; save();
-        return i.update({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`✅ Игрок <@${uid}> успешно кикнут.`)], components: [] });
-      }
-      if (action === "no") {
-         if (target) await target.roles.remove([WARN_CONFIG.WARN_ROLE_1, WARN_CONFIG.WARN_ROLE_2]).catch(()=>{});
-         await removeWarnMessage(i.guild, uid);
-         delete db.activeWarns[uid]; save();
-         return i.update({ embeds: [new EmbedBuilder().setColor("Yellow").setDescription(`✅ Процесс кика отключен. Варны сняты с игрока <@${uid}>.`)], components: [] });
-      }
-    }
-
-    // === ОБЖАЛОВАНИЕ ВАРНА ===
-    if (i.isButton() && i.customId === "appeal_start_btn") {
-      const modal = new ModalBuilder().setCustomId("modal_appeal_global").setTitle("Форма обжалования");
-      modal.addComponents(
-        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("ap_who").setLabel("1. Кто вы? (Ник и статик)").setStyle(TextInputStyle.Short).setRequired(true)),
-        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("ap_reason").setLabel("2. За что был выдан варн?").setStyle(TextInputStyle.Short).setRequired(true)),
-        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("ap_why").setLabel("3. Почему варн выдан неверно?").setStyle(TextInputStyle.Paragraph).setRequired(true))
-      );
-      return i.showModal(modal);
-    }
-
-    if (i.isModalSubmit() && i.customId === "modal_appeal_global") {
-      const appealChannel = await i.guild.channels.fetch(CONFIG.MAIN_LOG_CHANNEL);
-      const emb = new EmbedBuilder()
-        .setTitle("⚖️ НОВОЕ ОБЖАЛОВАНИЕ ВАРНА")
-        .setColor("Orange")
-        .addFields(
-          { name: "👤 Игрок", value: `${i.user}` },
-          { name: "📝 Ник/Статик", value: i.fields.getTextInputValue("ap_who") },
-          { name: "🛑 За что выдали", value: i.fields.getTextInputValue("ap_reason") },
-          { name: "❓ Почему не согласен", value: i.fields.getTextInputValue("ap_why") },
-          { name: "📊 Статус", value: "⏳ Ожидание руководства" }
-        )
-        .setTimestamp();
-
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`adm_watch_req_${i.user.id}`).setLabel("👀 Смотрю").setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`adm_ok_appeal_${i.user.id}`).setLabel("✅ Принять").setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId(`adm_no_${i.user.id}`).setLabel("❌ Отклонить").setStyle(ButtonStyle.Danger)
-      );
-
-      await appealChannel.send({ embeds: [emb], components: [row] });
-      return i.reply({ content: "✅ Ваше обжалование отправлено в главные логи!", ephemeral: true });
-    }
-
-    // === ВЫДАЧА ВАРНА ===
-    if (i.isButton() && i.customId === "warn_issue_btn") {
-      const hasMgmtRole = WARN_CONFIG.MANAGEMENT_ROLES.some(r => i.member.roles.cache.has(r));
-      if (!hasMgmtRole) return i.reply({ content: "❌ Куда жмешь? У тебя нет прав выписывать варны!", ephemeral: true });
-
-      const modal = new ModalBuilder().setCustomId("modal_warn_issue").setTitle("Выдача варна");
-      modal.addComponents(
-        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("w_target").setLabel("ID пользователя").setStyle(TextInputStyle.Short).setRequired(true)),
-        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("w_reason").setLabel("Причина").setStyle(TextInputStyle.Short).setRequired(true)),
-        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("w_task").setLabel("Что нужно сделать для отработки?").setStyle(TextInputStyle.Paragraph).setRequired(true))
-      );
-      return i.showModal(modal);
-    }
-
-    if (i.isModalSubmit() && i.customId === "modal_warn_issue") {
-      const targetId = i.fields.getTextInputValue("w_target");
-      const reason = i.fields.getTextInputValue("w_reason");
-      const task = i.fields.getTextInputValue("w_task");
-
-      const targetMember = await i.guild.members.fetch(targetId).catch(()=>null);
-      if (targetMember) {
-        await targetMember.roles.add(WARN_CONFIG.WARN_ROLE_1).catch(()=>{});
-        targetMember.send(`⚠️ Вы получили варн!\n**Причина:** ${reason}\n\nУ тебя есть 2 дня, чтобы снять этот варн, иначе последствия будут хуже.`).catch(() => notifyBlocked(i.guild, targetMember));
-      }
-
-      const randomGif = WARN_CONFIG.WARN_GIFS[Math.floor(Math.random() * WARN_CONFIG.WARN_GIFS.length)];
-      const otrabotkaChannel = await i.guild.channels.fetch(WARN_CONFIG.WORK_CHANNEL);
-      
-      const embed = new EmbedBuilder()
-        .setTitle("🛑 ПОЛУЧЕН ВАРН")
-        .setColor("Red")
-        .setImage(randomGif) 
-        .addFields(
-          { name: "👮 Выдал", value: `${i.user}`, inline: true },
-          { name: "👤 Нарушитель", value: `<@${targetId}>`, inline: true },
-          { name: "📝 Причина", value: reason, inline: false },
-          { name: "🛠 Как отработать", value: task, inline: false }
-        ).setTimestamp();
-
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`w_rem_task_${targetId}`).setLabel("Снять заданием").setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId(`w_rem_pts_${targetId}`).setLabel(`Снять за ${WARN_CONFIG.REMOVE_COST} баллов`).setStyle(ButtonStyle.Primary)
-      );
-
-      const warnMsg = await otrabotkaChannel.send({ content: `<@${targetId}>, у тебя проблемы!`, embeds: [embed], components: [row] });
-      
-      try {
-        const threadName = targetMember ? `Отработка: ${targetMember.user.username}` : `Отработка: ${targetId}`;
-        await warnMsg.startThread({ name: threadName, autoArchiveDuration: ThreadAutoArchiveDuration.OneDay });
-      } catch(e) { console.error("Не удалось создать ветку", e); }
-
-      db.activeWarns[targetId] = { level: 1, timestamp: Date.now(), notified: false, warnMsgId: warnMsg.id };
-      save();
-
-      return i.reply({ content: `✅ Варн успешно выдан игроку <@${targetId}>. Ветка создана.`, ephemeral: true });
-    }
-
-    if (i.isButton() && i.customId.startsWith("w_")) {
-      const action = i.customId.split("_").slice(0, 3).join("_"); 
-      const targetId = i.customId.split("_").pop();
-
-      if (i.user.id !== targetId && action !== "bribe_bot_pay" && action !== "bribe_bot_no") {
-         return i.reply({ content: "❌ Это не твой варн!", ephemeral: true });
-      }
-      if (!i.member.roles.cache.has(CONFIG.ROLE_ACCEPTED_ID) && action !== "bribe_bot_pay" && action !== "bribe_bot_no") {
-         return i.reply({ content: "❌ Тебе нужна роль 'Принятого', чтобы отрабатывать варны.", ephemeral: true });
-      }
-
-      if (action === "w_rem_task") {
-        const modal = new ModalBuilder().setCustomId(`modal_w_task_${targetId}`).setTitle("Отчет о снятии варна");
-        modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("proof").setLabel("Ссылка на доказательства (скрин/видео)").setStyle(TextInputStyle.Short).setRequired(true)));
-        return i.showModal(modal);
-      }
-
-      if (action === "w_rem_pts") {
-        const cooldown = getWarnCooldown(i.user.id);
-        const now = Date.now();
-
-        if (now < cooldown) {
-          const hoursLeft = Math.ceil((cooldown - now) / (1000 * 60 * 60));
-          const embed = new EmbedBuilder()
-            .setTitle("🚨 АХ ТЫ ЗАХОТЕЛ ОБМАНУТЬ KENZO!")
-            .setDescription(`Ты уже снимал варн за баллы недавно! До следующего легального снятия осталось: **${hoursLeft} часов**.\n\nПоскольку ты гавнюк и пытаешься обойти систему:\n💵 **Плати мне (боту) ${WARN_CONFIG.BRIBE_COST} баллов**, и я забуду.\n❌ Либо жми **"Денег нет"**, и я иду сливать всё Kenzo!`)
-            .setColor("DarkRed");
-          const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`bribe_bot_pay_${targetId}`).setLabel(`Заплатить ${WARN_CONFIG.BRIBE_COST} баллов`).setStyle(ButtonStyle.Success),
-            new ButtonBuilder().setCustomId(`bribe_bot_no_${targetId}`).setLabel("Денег нет...").setStyle(ButtonStyle.Danger)
-          );
-          return i.reply({ embeds: [embed], components: [row], ephemeral: true });
-        } else {
-          const balance = getPoints(i.user.id);
-          if (balance < WARN_CONFIG.REMOVE_COST) return i.reply({ content: `❌ У тебя не хватает баллов! Нужно: ${WARN_CONFIG.REMOVE_COST}.`, ephemeral: true });
-          
-          addPoints(i.user.id, -WARN_CONFIG.REMOVE_COST);
-          setWarnCooldown(i.user.id); 
-          await i.member.roles.remove([WARN_CONFIG.WARN_ROLE_1, WARN_CONFIG.WARN_ROLE_2]).catch(()=>{});
-          
-          await removeWarnMessage(i.guild, i.user.id); 
-          delete db.activeWarns[i.user.id]; save();
-
-          return i.reply({ content: `✅ Варн успешно снят! Списано ${WARN_CONFIG.REMOVE_COST} баллов. Сообщение отработки удалено.`, ephemeral: true });
-        }
-      }
-    }
-
-    if (i.isButton() && i.customId.startsWith("bribe_bot_")) {
-      const isPay = i.customId.includes("_pay_");
-      const balance = getPoints(i.user.id);
-
-      if (isPay) {
-        if (balance >= WARN_CONFIG.BRIBE_COST) {
-          addPoints(i.user.id, -WARN_CONFIG.BRIBE_COST);
-          return i.update({ embeds: [new EmbedBuilder().setColor("Green").setDescription("😎 Отлично. Баллы списаны. Я нем как рыба. Гуляй.")], components: [] });
-        } else {
-          client.users.fetch(CAPT_CONFIG.OWNER_ID).then(owner => { owner.send(`⚠️ **Kenzo, тут крыса!** Игрок ${i.user} пытался дать мне взятку, но оказался нищим! Разберись!`).catch(()=>{}); }).catch(()=>{});
-          return i.update({ embeds: [new EmbedBuilder().setColor("Red").setDescription("🤬 ТЫ ХОТЕЛ МЕНЯ ОБМАНУТЬ СУКИН СЫН! Денег у тебя нет! Я уже написал Kenzo.")], components: [] });
-        }
-      } else {
-        client.users.fetch(CAPT_CONFIG.OWNER_ID).then(owner => { owner.send(`⚠️ **Kenzo!** Игрок ${i.user} пытался обойти кулдаун. Денег на взятку нет.`).catch(()=>{}); }).catch(()=>{});
-        return i.update({ embeds: [new EmbedBuilder().setColor("DarkRed").setDescription("🤡 Ну всё, пиши пропало. Я сдал тебя Kenzo со всеми потрохами.")], components: [] });
-      }
-    }
-
-    if (i.isModalSubmit() && i.customId.startsWith("modal_w_task_")) {
-      const log = await i.guild.channels.fetch(CONFIG.MAIN_LOG_CHANNEL);
-      const emb = new EmbedBuilder().setTitle("🛠 ЗАПРОС НА СНЯТИЕ ВАРНА (ЗАДАНИЕ)").setColor("Blue").addFields({ name: "👤 Игрок", value: `${i.user}` }, { name: "🔗 Док-ва", value: i.fields.getTextInputValue("proof") }, { name: "📊 Статус", value: "⏳ Ожидание проверки руководством" }).setTimestamp();
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`adm_watch_req_${i.user.id}`).setLabel("👀 Смотрю").setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`adm_ok_warnrem_${i.user.id}`).setLabel("✅ Одобрить снятие").setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId(`adm_no_${i.user.id}`).setLabel("❌ Отклонить").setStyle(ButtonStyle.Danger)
-      );
-      await log.send({ embeds: [emb], components: [row] });
-      await i.message.edit({ components: [] }).catch(()=>{});
-      return i.reply({ content: "✅ Ваш отчет отправлен руководству на рассмотрение!", ephemeral: true });
-    }
-
     // === АДМИН-КНОПКИ ===
     if (i.isButton() && i.customId.startsWith("adm_")) {
       const [ , action, type, uid, val1, val2] = i.customId.split("_");
@@ -653,7 +345,7 @@ client.on("interactionCreate", async i => {
       if (action === "watch") {
         const fields = embed.data.fields.map(f => f.name === "📊 Статус" ? {name:"📊 Статус", value:`👀 Проверяет ${i.user.username}`} : f);
         embed.setColor("Blue").setFields(fields);
-        if (target) target.send("👀 Твоя заявка/обжалование взято на рассмотрение!").catch(() => notifyBlocked(i.guild, target));
+        if (target) target.send("👀 Твоя заявка взято на рассмотрение!").catch(() => notifyBlocked(i.guild, target));
         return i.update({ embeds: [embed] });
       }
 
@@ -687,14 +379,6 @@ client.on("interactionCreate", async i => {
             target.send("🏖 Твой отпуск одобрен! Хорошего отдыха.").catch(() => notifyBlocked(i.guild, target));
           }
         }
-        else if (type === "warnrem" || type === "appeal") {
-           if (target) {
-             await target.roles.remove([WARN_CONFIG.WARN_ROLE_1, WARN_CONFIG.WARN_ROLE_2]).catch(()=>{});
-             target.send("✅ Твой варн успешно снят (заявка/обжалование одобрены)!").catch(() => notifyBlocked(i.guild, target));
-           }
-           await removeWarnMessage(i.guild, uid); 
-           delete db.activeWarns[uid]; save();
-        }
 
         const fields = embed.data.fields.map(f => f.name === "📊 Статус" ? {name:"📊 Статус", value:`✅ Одобрено (${i.user.username})`} : f);
         embed.setColor("Green").setFields(fields);
@@ -719,7 +403,7 @@ client.on("interactionCreate", async i => {
         emb.setFields(fields);
         await msg.edit({ embeds: [emb], components: [] });
       }
-      if (target) target.send(`❌ Твоя заявка/обжалование отклонена. Причина: ${reason}`).catch(() => notifyBlocked(i.guild, target));
+      if (target) target.send(`❌ Твоя заявка отклонена. Причина: ${reason}`).catch(() => notifyBlocked(i.guild, target));
       return i.reply({ content: "Статус обновлен на: Отказано.", ephemeral: true });
     }
 
@@ -741,8 +425,7 @@ client.on("interactionCreate", async i => {
     if (i.isButton() && i.customId === "capt_remove") {
       const hasPerm = CAPT_CONFIG.REMOVE_ROLES.some(r => i.member.roles.cache.has(r));
       if (!hasPerm) {
-        client.users.fetch(CAPT_CONFIG.OWNER_ID).then(owner => { owner.send(`⚠️ Игрок ${i.user} попытался нажать кнопку "Удалить с капта" без прав!`).catch(()=>{}); }).catch(()=>{});
-        return i.reply({ content: "АХ ТЫ ПИСЮН МАРИНОВАНЫЙ РЕШИЛ Удалить кавото я все Kenzo раскажу", ephemeral: true });
+        return i.reply({ content: "❌ У вас нет прав.", ephemeral: true });
       }
       const modal = new ModalBuilder().setCustomId("modal_capt_remove").setTitle("Удалить с капта");
       modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("target_id").setLabel("Discord ID").setStyle(TextInputStyle.Short).setRequired(true)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("reason").setLabel("Причина").setStyle(TextInputStyle.Short).setRequired(true)));

@@ -12,12 +12,13 @@ const {
   StringSelectMenuOptionBuilder,
   REST,
   Routes,
-  SlashCommandBuilder
+  SlashCommandBuilder,
+  PermissionsBitField
 } = require("discord.js");
 const fs = require("fs");
  
 /* ================= [ НАСТРОЙКИ ] ================= */
-const NEW_IMAGE = "https://cdn.discordapp.com/attachments/1472664809400172648/1495428505628835910/2025-12-08_111532.png?ex=69ee1ed3&is=69eccd53&hm=b6fa875964d7610a821c10edc191bd30f081bddc73cbcfdb9af227251ff9bde6&";
+const NEW_IMAGE = "https://cdn.discordapp.com/attachments/1486403480426909967/1499715126985494658/2026-01-08_032412.png?ex=69f5ce0d&is=69f47c8d&hm=3158913dcd594f530731f42ebbac30442042b65ebb294fd7e5238bf317cb2887&";
  
 const CONFIG = {
   COMMAND_CHANNEL_ID: "1497719409639297184",
@@ -32,9 +33,18 @@ const CONFIG = {
   TIER_IMAGE: NEW_IMAGE,
   REPORT_LOG_CHANNEL: "1498782688163790978",
  
+  // Каналы для обзвона (открываются человеку при нажатии "Обзвонить")
+  INTERVIEW_CHANNELS: [
+    "1480227608846143548",
+    "1480227634393649324",
+    "1499718934977445979",
+    "1499718997225111702",
+    "1499719070885482648"
+  ],
+ 
   // Роли штрафов
-  FINE_ROLE_1: "1479987457591218410",  // Штраф 1
-  FINE_ROLE_2: "1479987547395325984",  // Штраф 2 / роль проверяющего
+  FINE_ROLE_1: "1479987457591218410",
+  FINE_ROLE_2: "1479987547395325984",
  
   ADMIN_ROLES: [
     "1479566887519129781",
@@ -56,6 +66,9 @@ const CAPT_CONFIG = {
   OWNER_ID: "530064311310352415"
 };
  
+// Хранилище активных обзвонов: uid -> { threadId }
+const activeInterviews = new Map();
+ 
 let currentCapt = { tier1: [], tier2: [], tier3: [], subs: [] };
 const RANK_COSTS = { "3": 89, "4": 179 };
 const EARN_OPTIONS = [
@@ -73,9 +86,13 @@ const EARN_OPTIONS = [
 /* ================= [ СЛЭШ КОМАНДЫ ] ================= */
 const commands = [
   new SlashCommandBuilder()
-    .setName('новость')
+    .setName('новости')
     .setDescription('Разослать новость семье')
     .addStringOption(option => option.setName('текст').setDescription('Текст новости').setRequired(true)),
+  new SlashCommandBuilder()
+    .setName('спам')
+    .setDescription('Разослать спам в ЛС всем участникам семьи о капте')
+    .addStringOption(option => option.setName('текст').setDescription('Текст сообщения').setRequired(false)),
   new SlashCommandBuilder()
     .setName('тир')
     .setDescription('Панель получения тира'),
@@ -110,7 +127,6 @@ const commands = [
 ];
  
 /* ================= [ БАЗА ДАННЫХ ] ================= */
-// Данные сохраняются в db.json и afkdb.json — НЕ теряются при обновлении кода!
 let db = { points: {} };
 if (fs.existsSync("db.json")) {
   try { db = Object.assign({ points: {} }, JSON.parse(fs.readFileSync("db.json", "utf8"))); }
@@ -134,9 +150,7 @@ const saveAfk = () => {
 const addPoints = (id, amt) => { db.points[id] = (db.points[id] || 0) + amt; save(); };
 const getPoints = (id) => db.points[id] || 0;
  
-// Автосохранение каждые 5 минут
 setInterval(() => { save(); saveAfk(); }, 5 * 60 * 1000);
-// Сохранение при завершении
 process.on('SIGINT', () => { save(); saveAfk(); process.exit(0); });
 process.on('SIGTERM', () => { save(); saveAfk(); process.exit(0); });
  
@@ -155,6 +169,25 @@ const notifyBlocked = async (guild, member) => {
     const ch = await guild.channels.fetch(CONFIG.AFK_LOG_CHANNEL);
     if (ch) ch.send(`⚠️ **ВНИМАНИЕ!** Игрок <@${member.id}> (${member.user.tag}) заблокировал бота или закрыл ЛС.`);
   } catch(e) {}
+};
+ 
+/* ===== УТИЛИТА: открыть/закрыть каналы для пользователя ===== */
+const openInterviewChannels = async (guild, userId) => {
+  for (const chId of CONFIG.INTERVIEW_CHANNELS) {
+    try {
+      const ch = await guild.channels.fetch(chId);
+      if (ch) await ch.permissionOverwrites.create(userId, { ViewChannel: true, Connect: true });
+    } catch(e) { console.error(`Ошибка открытия канала ${chId}:`, e); }
+  }
+};
+ 
+const closeInterviewChannels = async (guild, userId) => {
+  for (const chId of CONFIG.INTERVIEW_CHANNELS) {
+    try {
+      const ch = await guild.channels.fetch(chId);
+      if (ch) await ch.permissionOverwrites.delete(userId).catch(() => {});
+    } catch(e) { console.error(`Ошибка закрытия канала ${chId}:`, e); }
+  }
 };
  
 /* ================= [ ГОТОВНОСТЬ ] ================= */
@@ -203,16 +236,55 @@ client.on("interactionCreate", async i => {
         return i.reply({ content: `✅ Удалено ${n} сообщений.`, ephemeral: true });
       }
  
-      if (cmd === 'новость') {
+      /* ===== /новости ===== */
+      if (cmd === 'новости') {
         if (!CONFIG.ADMIN_ROLES.some(r => i.member.roles.cache.has(r)))
           return i.reply({ content: "❌ Нет прав.", ephemeral: true });
         await i.deferReply({ ephemeral: true });
         const text = i.options.getString('текст');
-        const embed = new EmbedBuilder().setTitle("📢 ВАЖНАЯ НОВОСТЬ СЕМЬИ").setDescription(text).setColor("Red").setImage(CONFIG.IMAGE).setTimestamp();
+        const embed = new EmbedBuilder()
+          .setTitle("📢 ВАЖНАЯ НОВОСТЬ СЕМЬИ")
+          .setDescription(text)
+          .setColor("Red")
+          .setImage(CONFIG.IMAGE)
+          .setTimestamp();
         await i.guild.members.fetch();
         const members = i.guild.members.cache.filter(m => m.roles.cache.has(CONFIG.ROLE_ACCEPTED_ID) && !m.user.bot);
-        members.forEach(async m => { try { await m.send({ embeds: [embed] }); } catch { notifyBlocked(i.guild, m); } });
-        return i.editReply(`✅ Рассылка начата. ~${members.size} пользователей`);
+        let sent = 0;
+        for (const [, m] of members) {
+          try {
+            await m.send({ embeds: [embed] });
+            sent++;
+          } catch {
+            notifyBlocked(i.guild, m);
+          }
+        }
+        return i.editReply(`✅ Новость разослана. Получили: **${sent}** участников.`);
+      }
+ 
+      /* ===== /спам ===== */
+      if (cmd === 'спам') {
+        if (!CONFIG.ADMIN_ROLES.some(r => i.member.roles.cache.has(r)))
+          return i.reply({ content: "❌ Нет прав.", ephemeral: true });
+        await i.deferReply({ ephemeral: true });
+        const customText = i.options.getString('текст');
+        const spamText = customText || "🚨 **ВНИМАНИЕ!** У нас КАПТ! Срочно заходи в войс и в игру! Не опаздывай!";
+        await i.guild.members.fetch();
+        const members = i.guild.members.cache.filter(m => m.roles.cache.has(CONFIG.ROLE_ACCEPTED_ID) && !m.user.bot);
+        let sent = 0;
+        for (const [, m] of members) {
+          try {
+            // Отправляем 5 раз каждому
+            for (let rep = 0; rep < 5; rep++) {
+              await m.send(spamText);
+              await new Promise(r => setTimeout(r, 400)); // небольшая задержка
+            }
+            sent++;
+          } catch {
+            notifyBlocked(i.guild, m);
+          }
+        }
+        return i.editReply(`✅ Спам отправлен **${sent}** участникам (по 5 сообщений каждому).`);
       }
  
       if (cmd === 'тир') {
@@ -329,7 +401,6 @@ client.on("interactionCreate", async i => {
     }
  
     /* ===== ТИР — КНОПКА ===== */
-    // customId = "TIERBTN" — без подчёркиваний, не конфликтует ни с чем
     if (i.isButton() && i.customId === "TIERBTN") {
       const sel = new StringSelectMenuBuilder()
         .setCustomId("TIERSEL")
@@ -342,13 +413,10 @@ client.on("interactionCreate", async i => {
       return i.reply({ content: "Выбери тир:", components: [new ActionRowBuilder().addComponents(sel)], ephemeral: true });
     }
  
-    // ТИР — выбор из select menu
     if (i.isStringSelectMenu() && i.customId === "TIERSEL") {
-      const v = i.values[0]; // T1 / T2 / T3
-      const n = v.replace("T", ""); // 1 / 2 / 3
-      const modal = new ModalBuilder()
-        .setCustomId(`TIERM${n}`) // TIERM1, TIERM2, TIERM3
-        .setTitle(`Заявка на Tier ${n}`);
+      const v = i.values[0];
+      const n = v.replace("T", "");
+      const modal = new ModalBuilder().setCustomId(`TIERM${n}`).setTitle(`Заявка на Tier ${n}`);
       modal.addComponents(
         new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("tnick").setLabel("Ник и Статик").setStyle(TextInputStyle.Short).setRequired(true)),
         new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("tskills").setLabel("Откат, Спешик / Тяга").setStyle(TextInputStyle.Paragraph).setRequired(true)),
@@ -357,9 +425,8 @@ client.on("interactionCreate", async i => {
       return i.showModal(modal);
     }
  
-    // ТИР — обработка модалки, customId = TIERM1 / TIERM2 / TIERM3
     if (i.isModalSubmit() && /^TIERM[123]$/.test(i.customId)) {
-      const n = i.customId.replace("TIERM", ""); // "1" "2" "3"
+      const n = i.customId.replace("TIERM", "");
       const logCh = await i.guild.channels.fetch(CONFIG.MAIN_LOG_CHANNEL);
       const emb = new EmbedBuilder()
         .setTitle(`🎯 НОВАЯ ЗАЯВКА НА TIER ${n}`)
@@ -386,24 +453,17 @@ client.on("interactionCreate", async i => {
       return i.reply({ content: "✅ Заявка на тир отправлена руководству!", ephemeral: true });
     }
  
-    /* ===== ЕЖЕНЕДЕЛЬНЫЙ ОТЧЁТ — КНОПКА ===== */
+    /* ===== ЕЖЕНЕДЕЛЬНЫЙ ОТЧЁТ ===== */
     if (i.isButton() && i.customId === "WREPORTBTN") {
       const modal = new ModalBuilder().setCustomId("WREPORTM").setTitle("📋 Еженедельный отчёт");
       modal.addComponents(
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId("wrphoto").setLabel("🔗 Ссылка на фото принятых").setPlaceholder("Вставьте ссылку...").setStyle(TextInputStyle.Short).setRequired(true)
-        ),
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId("wraccepted").setLabel("👤 Кого приняли в планшет").setPlaceholder("Перечислите ники...").setStyle(TextInputStyle.Paragraph).setRequired(true)
-        ),
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId("wrdone").setLabel("📅 Что сделали за 1 неделю").setPlaceholder("Опишите деятельность...").setStyle(TextInputStyle.Paragraph).setRequired(true)
-        )
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("wrphoto").setLabel("🔗 Ссылка на фото принятых").setPlaceholder("Вставьте ссылку...").setStyle(TextInputStyle.Short).setRequired(true)),
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("wraccepted").setLabel("👤 Кого приняли в планшет").setPlaceholder("Перечислите ники...").setStyle(TextInputStyle.Paragraph).setRequired(true)),
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("wrdone").setLabel("📅 Что сделали за 1 неделю").setPlaceholder("Опишите деятельность...").setStyle(TextInputStyle.Paragraph).setRequired(true))
       );
       return i.showModal(modal);
     }
  
-    // ЕЖЕНЕДЕЛЬНЫЙ ОТЧЁТ — обработка модалки
     if (i.isModalSubmit() && i.customId === "WREPORTM") {
       const photo = i.fields.getTextInputValue("wrphoto");
       const accepted = i.fields.getTextInputValue("wraccepted");
@@ -423,8 +483,6 @@ client.on("interactionCreate", async i => {
           { name: "✅ Что сделали за неделю", value: done },
           { name: "📊 Статус", value: "⏳ Ожидание проверки" }
         ).setTimestamp().setFooter({ text: `ID: ${uid}` });
- 
-      // 5 кнопок управления отчётом
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`WRWATCH.${uid}`).setLabel("👀 Смотрю").setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId(`WROK.${uid}`).setLabel("✅ Отчёт принят").setStyle(ButtonStyle.Success),
@@ -438,10 +496,8 @@ client.on("interactionCreate", async i => {
  
     /* ===== КНОПКИ УПРАВЛЕНИЯ ОТЧЁТОМ ===== */
     if (i.isButton() && i.customId.startsWith("WRWATCH.")) {
-      const uid = i.customId.split(".")[1];
       const emb = EmbedBuilder.from(i.message.embeds[0]);
       emb.setColor("Blue").setFields(emb.data.fields.map(f => f.name === "📊 Статус" ? { name: "📊 Статус", value: `👀 Проверяет ${i.user.username}` } : f));
-      // Выдать роль проверяющего тому кто нажал
       try { await i.member.roles.add(CONFIG.FINE_ROLE_2).catch(() => {}); } catch(e) {}
       return i.update({ embeds: [emb] });
     }
@@ -491,7 +547,7 @@ client.on("interactionCreate", async i => {
       return i.update({ embeds: [emb], components: [] });
     }
  
-    /* ===== АДМИН-КНОПКИ (через точку как разделитель) ===== */
+    /* ===== АДМИН-КНОПКИ ===== */
     // ADMWATCH.uid
     if (i.isButton() && i.customId.startsWith("ADMWATCH.")) {
       const uid = i.customId.split(".")[1];
@@ -548,7 +604,7 @@ client.on("interactionCreate", async i => {
       return i.update({ embeds: [emb], components: [] });
     }
  
-    // ADMFAM.uid
+    // ADMFAM.uid — принять в семью
     if (i.isButton() && i.customId.startsWith("ADMFAM.")) {
       const uid = i.customId.split(".")[1];
       const target = await i.guild.members.fetch(uid).catch(() => null);
@@ -575,6 +631,113 @@ client.on("interactionCreate", async i => {
       const emb = EmbedBuilder.from(i.message.embeds[0]);
       emb.setColor("Green").setFields(emb.data.fields.map(f => f.name === "📊 Статус" ? { name: "📊 Статус", value: `✅ Одобрено (${i.user.username})` } : f));
       return i.update({ embeds: [emb], components: [] });
+    }
+ 
+    // ===== 📞 ADMCALL.uid — ОБЗВОНИТЬ =====
+    if (i.isButton() && i.customId.startsWith("ADMCALL.")) {
+      if (!CONFIG.ADMIN_ROLES.some(r => i.member.roles.cache.has(r)))
+        return i.reply({ content: "❌ Нет прав.", ephemeral: true });
+ 
+      const uid = i.customId.split(".")[1];
+      const target = await i.guild.members.fetch(uid).catch(() => null);
+ 
+      // 1. Открываем каналы обзвона для пользователя
+      await openInterviewChannels(i.guild, uid);
+ 
+      // 2. Отправляем ДМ пользователю
+      if (target) {
+        target.send(
+          `📞 **Вас вызвали на обзвон!**\n` +
+          `У вас есть **7 минут**, чтобы зайти в войс-канал.\n` +
+          `Не опаздывай! Удачи 🍀`
+        ).catch(() => notifyBlocked(i.guild, target));
+      }
+ 
+      // 3. Создаём тред для обзвона в лог-канале
+      let threadId = null;
+      try {
+        const logCh = await i.guild.channels.fetch(CONFIG.MAIN_LOG_CHANNEL);
+        const thread = await logCh.threads.create({
+          name: `📞 Обзвон — ${target ? target.user.username : uid}`,
+          autoArchiveDuration: 60,
+          reason: `Обзвон с ${uid} (инициировал ${i.user.username})`
+        });
+        threadId = thread.id;
+        activeInterviews.set(uid, { threadId });
+        await thread.send(
+          `📋 **Обзвон начат**\n` +
+          `👤 Кандидат: <@${uid}>\n` +
+          `👮 Проводит: <@${i.user.id}>\n` +
+          `⏰ Начат: <t:${Math.floor(Date.now() / 1000)}:R>\n\n` +
+          `Когда закончишь — нажми **🔴 Отключить** в заявке.`
+        );
+      } catch(e) {
+        console.error("Ошибка создания треда:", e);
+      }
+ 
+      // 4. Обновляем эмбед — меняем кнопки, добавляем "Отключить"
+      const emb = EmbedBuilder.from(i.message.embeds[0]);
+      emb.setColor("Purple").setFields(emb.data.fields.map(f =>
+        f.name === "📊 Статус" ? { name: "📊 Статус", value: `📞 На обзвоне у ${i.user.username}` } : f
+      ));
+      const newRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`ADMWATCH.${uid}`).setLabel("👀 Смотрю").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`ADMFAM.${uid}`).setLabel("✅ Принять").setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(`ADMCALLOFF.${uid}`).setLabel("🔴 Отключить").setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId(`ADMNO.${uid}`).setLabel("❌ Отклонить").setStyle(ButtonStyle.Danger)
+      );
+      return i.update({ embeds: [emb], components: [newRow] });
+    }
+ 
+    // ===== 🔴 ADMCALLOFF.uid — ОТКЛЮЧИТЬ (после обзвона) =====
+    if (i.isButton() && i.customId.startsWith("ADMCALLOFF.")) {
+      if (!CONFIG.ADMIN_ROLES.some(r => i.member.roles.cache.has(r)))
+        return i.reply({ content: "❌ Нет прав.", ephemeral: true });
+ 
+      const uid = i.customId.split(".")[1];
+ 
+      // 1. Закрываем каналы обзвона
+      await closeInterviewChannels(i.guild, uid);
+ 
+      // 2. Уведомляем в тред
+      const interviewData = activeInterviews.get(uid);
+      if (interviewData) {
+        try {
+          const thread = await i.guild.channels.fetch(interviewData.threadId).catch(() => null);
+          if (thread) {
+            await thread.send(
+              `🔴 **Обзвон завершён** (${i.user.username})\n` +
+              `⏳ Тред будет удалён через **10 минут**.`
+            );
+            // Удалить тред через 10 минут
+            setTimeout(async () => {
+              try { await thread.delete("Автоудаление после обзвона"); } catch(e) {}
+            }, 10 * 60 * 1000);
+          }
+        } catch(e) { console.error("Ошибка работы с тредом:", e); }
+        activeInterviews.delete(uid);
+      }
+ 
+      // 3. Удалить сообщения пользователя в лог-канале (семья)
+      try {
+        const logCh = await i.guild.channels.fetch(CONFIG.MAIN_LOG_CHANNEL);
+        const msgs = await logCh.messages.fetch({ limit: 100 });
+        const userMsgs = msgs.filter(m => m.author.id === uid);
+        for (const [, msg] of userMsgs) {
+          await msg.delete().catch(() => {});
+        }
+      } catch(e) { console.error("Ошибка удаления сообщений:", e); }
+ 
+      // 4. Обновляем эмбед
+      const emb = EmbedBuilder.from(i.message.embeds[0]);
+      emb.setColor("Red").setFields(emb.data.fields.map(f =>
+        f.name === "📊 Статус" ? { name: "📊 Статус", value: `🔴 Отключён (${i.user.username})` } : f
+      ));
+      const newRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`ADMFAM.${uid}`).setLabel("✅ Принять").setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(`ADMNO.${uid}`).setLabel("❌ Отклонить").setStyle(ButtonStyle.Danger)
+      );
+      return i.update({ embeds: [emb], components: [newRow] });
     }
  
     // ADMNO.uid — показ модалки с причиной отказа
@@ -726,9 +889,11 @@ client.on("interactionCreate", async i => {
           { name: "🕒 Онлайн", value: i.fields.getTextInputValue("a4") },
           { name: "📊 Статус", value: "⏳ Ожидание" }
         ).setTimestamp();
+      // 4 кнопки: Смотрю | Принять | 📞 Обзвонить | Отклонить
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`ADMWATCH.${uid}`).setLabel("👀 Смотрю").setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId(`ADMFAM.${uid}`).setLabel("✅ Принять").setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(`ADMCALL.${uid}`).setLabel("📞 Обзвонить").setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId(`ADMNO.${uid}`).setLabel("❌ Отклонить").setStyle(ButtonStyle.Danger)
       );
       await log.send({ embeds: [emb], components: [row] });

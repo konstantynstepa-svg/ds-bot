@@ -164,7 +164,7 @@ const commands = [
 /* ================= [ СОБЫТИЯ ЗАПУСКА ] ================= */
 client.once("ready", async () => {
   console.log(`🤖 Бот ${client.user.tag} запущен и готов к работе!`);
- 
+
   const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
   try {
     await rest.put(Routes.applicationCommands(client.user.id), { body: commands.map(cmd => cmd.toJSON()) });
@@ -172,7 +172,89 @@ client.once("ready", async () => {
   } catch (error) {
     console.error('Ошибка регистрации команд:', error);
   }
+
+  // === ДИАГНОСТИКА КОНФИГА: проверяем что все ID из CONFIG реально существуют на сервере ===
+  await checkConfig();
 });
+
+async function checkConfig() {
+  const guild = client.guilds.cache.first();
+  if (!guild) {
+    console.warn('⚠️ Бот не состоит ни на одном сервере!');
+    return;
+  }
+
+  console.log(`\n🔍 Проверка конфигурации для сервера: ${guild.name} (${guild.id})\n`);
+
+  const channelFields = [
+    "COMMAND_CHANNEL_ID", "MAIN_LOG_CHANNEL", "REPORT_LOG_CHANNEL", "AFK_LOG_CHANNEL",
+    "AFK_COMMAND_CHANNEL", "NEWS_CHANNEL_ID", "WARN_SYSTEM_CHANNEL", "WARN_WORKOFF_CHANNEL",
+    "TIER_CHANNEL_ID"
+  ];
+  const roleFields = [
+    "ROLE_ACCEPTED_ID", "RANK_2_ROLE_ID", "RANK_3_ROLE_ID", "VACATION_ROLE", "FINE_ROLE_1", "FINE_ROLE_2"
+  ];
+
+  let problems = 0;
+
+  for (const field of channelFields) {
+    const id = CONFIG[field];
+    const ch = await guild.channels.fetch(id).catch(() => null);
+    if (!ch) {
+      console.warn(`❌ CONFIG.${field} = "${id}" — КАНАЛ НЕ НАЙДЕН на этом сервере!`);
+      problems++;
+    } else {
+      console.log(`✅ CONFIG.${field} -> #${ch.name}`);
+    }
+  }
+
+  for (const field of roleFields) {
+    const id = CONFIG[field];
+    const role = await guild.roles.fetch(id).catch(() => null);
+    if (!role) {
+      console.warn(`❌ CONFIG.${field} = "${id}" — РОЛЬ НЕ НАЙДЕНА на этом сервере!`);
+      problems++;
+    } else {
+      console.log(`✅ CONFIG.${field} -> @${role.name}`);
+    }
+  }
+
+  for (const id of CONFIG.ADMIN_ROLES) {
+    const role = await guild.roles.fetch(id).catch(() => null);
+    if (!role) {
+      console.warn(`❌ ADMIN_ROLES содержит "${id}" — РОЛЬ НЕ НАЙДЕНА на этом сервере!`);
+      problems++;
+    } else {
+      console.log(`✅ ADMIN_ROLES -> @${role.name}`);
+    }
+  }
+
+  for (const id of CONFIG.INTERVIEW_CHANNELS) {
+    const ch = await guild.channels.fetch(id).catch(() => null);
+    if (!ch) {
+      console.warn(`❌ INTERVIEW_CHANNELS содержит "${id}" — КАНАЛ НЕ НАЙДЕН на этом сервере!`);
+      problems++;
+    } else {
+      console.log(`✅ INTERVIEW_CHANNELS -> #${ch.name}`);
+    }
+  }
+
+  for (const [tier, id] of Object.entries(CAPT_CONFIG.TIERS)) {
+    const role = await guild.roles.fetch(id).catch(() => null);
+    if (!role) {
+      console.warn(`❌ CAPT_CONFIG.TIERS["${tier}"] = "${id}" — РОЛЬ НЕ НАЙДЕНА на этом сервере!`);
+      problems++;
+    } else {
+      console.log(`✅ CAPT_CONFIG.TIERS["${tier}"] -> @${role.name}`);
+    }
+  }
+
+  if (problems === 0) {
+    console.log(`\n🎉 Все ID в CONFIG валидны для этого сервера!\n`);
+  } else {
+    console.warn(`\n⚠️ Найдено проблем: ${problems}. Замени соответствующие ID в CONFIG на актуальные ID с твоего нового сервера (ПКМ по каналу/роли -> "Копировать ID", нужен включенный режим разработчика в настройках Discord).\n`);
+  }
+}
  
 function buildCaptEmbed() {
   const fmt = (arr) => arr.length > 0 ? arr.map(id => `<@${id}>`).join('\n') : "Пусто";
@@ -215,7 +297,7 @@ client.on("interactionCreate", async i => {
         }
 
         await i.guild.members.fetch().catch(() => {});
-        const members = i.guild.members.cache.filter(m => m.roles.cache.has(CONFIG.ROLE_ACCEPTED_ID) && !m.user.bot);
+        const members = i.guild.members.cache.filter(m => !m.user.bot);
         let sent = 0;
         for (const [, m] of members) {
           try { await m.send({ embeds: [embed] }); sent++; } catch { notifyBlocked(i.guild, m); }
@@ -228,7 +310,7 @@ client.on("interactionCreate", async i => {
         await i.deferReply({ ephemeral: true });
         const text = i.options.getString('текст') || "🚨 **СБОР НА КАПТ META!** Быстро заходи в игру и садись в дискорд!";
         await i.guild.members.fetch().catch(() => {});
-        const members = i.guild.members.cache.filter(m => m.roles.cache.has(CONFIG.ROLE_ACCEPTED_ID) && !m.user.bot);
+        const members = i.guild.members.cache.filter(m => !m.user.bot);
         let sent = 0;
         for (const [, m] of members) {
           try {
@@ -302,7 +384,7 @@ client.on("interactionCreate", async i => {
         await i.deferReply({ ephemeral: true });
         const time = i.options.getString('time') || "ближайшее время";
         await i.guild.members.fetch().catch(() => {});
-        const members = i.guild.members.cache.filter(m => m.roles.cache.has(CONFIG.ROLE_ACCEPTED_ID) && !m.user.bot);
+        const members = i.guild.members.cache.filter(m => !m.user.bot);
         const embed = new EmbedBuilder().setTitle("⚔️ СБОР НА КАПТ META!").setDescription(`Сбор объявлен! Будьте в игре через: **${time}**!`).setImage(CAPT_CONFIG.IMAGE_URL).setColor("Red");
         members.forEach(async m => { try { await m.send({ embeds: [embed] }); } catch {} });
         return i.editReply(`✅ Рассылка запущена для ${members.size} участников.`);
@@ -469,9 +551,6 @@ client.on("interactionCreate", async i => {
       const emb = EmbedBuilder.from(i.message.embeds[0]).setColor("Green");
       emb.setFields(emb.data.fields.map(f => f.name === "📊 Статус" ? { name: "📊 Статус", value: `✅ Принял: ${i.user.username}` } : f));
       
-      if (i.channel.isThread()) {
-        await i.channel.send(`✅ Кандидат <@${uid}> успешно принят в семью!`);
-      }
       return i.update({ embeds: [emb], components: [] });
     }
  
@@ -491,9 +570,6 @@ client.on("interactionCreate", async i => {
         new ButtonBuilder().setCustomId(`ADMNO.${uid}`).setLabel("❌ Отказать").setStyle(ButtonStyle.Danger)
       );
 
-      if (i.channel.isThread()) {
-        await i.channel.send(`📞 <@${uid}>, присоединитесь на обзвон в голосовой канал!`);
-      }
       return i.update({ embeds: [emb], components: [row] });
     }
  
@@ -529,10 +605,6 @@ client.on("interactionCreate", async i => {
       }
       
       if (target) target.send(`❌ Ваша заявка в Meta отклонена. Причина: ${reason}`).catch(() => {});
-      
-      if (i.channel.isThread()) {
-        await i.channel.send(`❌ Заявка отклонена. Причина: ${reason}`);
-      }
       
       return i.reply({ content: "✅ Отказ оформлен.", ephemeral: true });
     }
@@ -650,22 +722,13 @@ client.on("interactionCreate", async i => {
       return i.showModal(modal);
     }
  
-    /* ================= [ ЛОГИКА СОЗДАНИЯ ОБЫЧНОЙ ВЕТКИ ПРИ ЗАЯВКЕ ] ================= */
+    /* ================= [ ЛОГИКА ОТПРАВКИ ЗАЯВКИ (БЕЗ ВЕТОК) ] ================= */
     if (i.isModalSubmit() && i.customId === "applyM") {
       const log = await i.guild.channels.fetch(CONFIG.MAIN_LOG_CHANNEL).catch(() => null);
-      if (!log) return i.reply({ content: "❌ Канал заявок не найден.", ephemeral: true });
+      if (!log) return i.reply({ content: "❌ Канал заявок не найден. Проверьте MAIN_LOG_CHANNEL в настройках бота.", ephemeral: true });
       
       const uid = i.user.id;
 
-      // Создаем обычную ветку
-      const msg = await log.send({ content: `Заявка от <@${uid}>` });
-      const thread = await msg.startThread({
-        name: `Заявка - ${i.user.username}`,
-        autoArchiveDuration: 60
-      });
-
-      await thread.members.add(uid);
-      
       const emb = new EmbedBuilder().setTitle("📩 НОВАЯ ЗАЯВКА В META").setColor("Red")
         .addFields(
           { name: "👤 Игрок", value: `${i.user}` },
@@ -682,13 +745,13 @@ client.on("interactionCreate", async i => {
         new ButtonBuilder().setCustomId(`ADMNO.${uid}`).setLabel("❌ Отказать").setStyle(ButtonStyle.Danger)
       );
       
-      await thread.send({ 
-        content: `**Ваша заявка взята на рассмотрение!**\n<@${uid}>, ожидайте ответа старшего состава здесь.`,
+      await log.send({ 
+        content: `Заявка от <@${uid}>`,
         embeds: [emb], 
         components: [row] 
       });
       
-      return i.reply({ content: "✅ Ваша анкета успешно отправлена, для вас была создана личная ветка!", ephemeral: true });
+      return i.reply({ content: "✅ Ваша анкета успешно отправлена на рассмотрение!", ephemeral: true });
     }
  
     if (i.isButton() && i.customId === "afk_on") {

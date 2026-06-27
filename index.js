@@ -271,7 +271,6 @@ function buildCaptEmbed() {
     .setTitle("⚔️ Война Семей Meta (Капт)")
     .setDescription("Нажмите кнопку ниже, чтобы записаться на капт.")
     .setColor("#2b2d31")
-    .setImage(CAPT_CONFIG.IMAGE_URL)
     .addFields(
       { name: `Tier 1: (${currentCapt.tier1.length})`, value: fmt(currentCapt.tier1), inline: true },
       { name: `Tier 2: (${currentCapt.tier2.length})`, value: fmt(currentCapt.tier2), inline: true },
@@ -298,7 +297,7 @@ client.on("interactionCreate", async i => {
         if (!CONFIG.ADMIN_ROLES.some(r => i.member.roles.cache.has(r))) return i.reply({ content: "❌ Нет прав.", ephemeral: true });
         await i.deferReply({ ephemeral: true });
         const text = i.options.getString('текст');
-        const embed = new EmbedBuilder().setTitle("📢 ВАЖНАЯ НОВОСТЬ META").setDescription(text).setColor("Red").setImage(CONFIG.IMAGE).setTimestamp();
+        const embed = new EmbedBuilder().setTitle("📢 ВАЖНАЯ НОВОСТЬ META").setDescription(text).setColor("Red").setTimestamp();
         
         const newsCh = await i.guild.channels.fetch(CONFIG.NEWS_CHANNEL_ID).catch(() => null);
         if (newsCh) {
@@ -331,7 +330,7 @@ client.on("interactionCreate", async i => {
       }
  
       if (cmd === 'тир') {
-        const embed = new EmbedBuilder().setTitle("🎯 ПОЛУЧЕНИЕ ТИРА (META)").setDescription("Нажмите кнопку ниже, чтобы подать заявку на проверку стрельбы.").setImage(CONFIG.TIER_IMAGE).setColor("#8A2BE2");
+        const embed = new EmbedBuilder().setTitle("🎯 ПОЛУЧЕНИЕ ТИРА (META)").setDescription("Нажмите кнопку ниже, чтобы подать заявку на проверку стрельбы.").setColor("#8A2BE2");
         const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("TIERBTN").setLabel("Получить тир").setStyle(ButtonStyle.Primary));
         await i.channel.send({ embeds: [embed], components: [row] });
         return i.reply({ content: "✅ Панель отправлена.", ephemeral: true });
@@ -346,7 +345,7 @@ client.on("interactionCreate", async i => {
       }
  
       if (cmd === 'menu') {
-        const embed = new EmbedBuilder().setTitle("💎 СИСТЕМА БАЛЛОВ И ПОВЫШЕНИЯ META").setDescription(`📜 **Цены повышения:**\n🔹 1 ➔ 2 ранг: **${RANK_COSTS["2"]} 💎**\n🔹 2 ➔ 3 ранг: **${RANK_COSTS["3"]} 💎**`).setImage(CONFIG.IMAGE).setColor("#00d4ff");
+        const embed = new EmbedBuilder().setTitle("💎 СИСТЕМА БАЛЛОВ И ПОВЫШЕНИЯ META").setDescription(`📜 **Цены повышения:**\n🔹 1 ➔ 2 ранг: **${RANK_COSTS["2"]} 💎**\n🔹 2 ➔ 3 ранг: **${RANK_COSTS["3"]} 💎**`).setColor("#00d4ff");
         const row = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId("earn_btn").setLabel("Заработать баллы").setStyle(ButtonStyle.Primary),
           new ButtonBuilder().setCustomId("balance_btn").setLabel("Мой Баланс").setStyle(ButtonStyle.Secondary),
@@ -357,14 +356,14 @@ client.on("interactionCreate", async i => {
       }
  
       if (cmd === 'заявка') {
-        const embed = new EmbedBuilder().setTitle("📝 ЗАЯВКА В СЕМЬЮ META").setDescription("Нажми на кнопку ниже, чтобы заполнить анкету на вступление.").setImage(CONFIG.IMAGE).setColor("#ff0000");
+        const embed = new EmbedBuilder().setTitle("📝 ЗАЯВКА В СЕМЬЮ META").setDescription("Нажми на кнопку ниже, чтобы заполнить анкету на вступление.").setColor("#ff0000");
         const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("apply_start").setLabel("Подать заявку").setStyle(ButtonStyle.Danger));
         await i.channel.send({ embeds: [embed], components: [row] });
         return i.reply({ content: "✅ Панель заявок создана.", ephemeral: true });
       }
  
       if (cmd === 'afk') {
-        const embed = new EmbedBuilder().setTitle("💤 УПРАВЛЕНИЕ AFK / ОТПУСКАМИ").setDescription("🏖 **Отпуск** — Подать заявку на отпуск.\n🌙 **Уйти в AFK** — Бот снимет роли до возвращения.\n✅ **Выйти из AFK** — Вернуть роли обратно.").setImage(CONFIG.IMAGE).setColor("#2f3136");
+        const embed = new EmbedBuilder().setTitle("💤 УПРАВЛЕНИЕ AFK / ОТПУСКАМИ").setDescription("🏖 **Отпуск** — Подать заявку на отпуск.\n🌙 **Уйти в AFK** — Бот снимет роли до возвращения.\n✅ **Выйти из AFK** — Вернуть роли обратно.").setColor("#2f3136");
         const row = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId("afk_vacation").setLabel("🏖 В отпуск").setStyle(ButtonStyle.Primary),
           new ButtonBuilder().setCustomId("afk_on").setLabel("🌙 Включить AFK").setStyle(ButtonStyle.Secondary),
@@ -394,13 +393,13 @@ client.on("interactionCreate", async i => {
         const time = i.options.getString('time') || "ближайшее время";
         await i.guild.members.fetch().catch(() => {});
         const members = i.guild.members.cache.filter(m => !m.user.bot);
-        const embed = new EmbedBuilder().setTitle("⚔️ СБОР НА КАПТ META!").setDescription(`Сбор объявлен! Будьте в игре через: **${time}**!`).setImage(CAPT_CONFIG.IMAGE_URL).setColor("Red");
+        const embed = new EmbedBuilder().setTitle("⚔️ СБОР НА КАПТ META!").setDescription(`Сбор объявлен! Будьте в игре через: **${time}**!`).setColor("Red");
         members.forEach(async m => { try { await m.send({ embeds: [embed] }); } catch {} });
         return i.editReply(`✅ Рассылка запущена для ${members.size} участников.`);
       }
  
       if (cmd === 'отчеты') {
-        const embed = new EmbedBuilder().setTitle("📋 ЕЖЕНЕДЕЛЬНЫЙ ОТЧЁТ СЕМЬИ META").setDescription("Нажмите кнопку ниже для отправки вашего отчета старшему составу.").setImage(CONFIG.IMAGE).setColor("#5865F2");
+        const embed = new EmbedBuilder().setTitle("📋 ЕЖЕНЕДЕЛЬНЫЙ ОТЧЁТ СЕМЬИ META").setDescription("Нажмите кнопку ниже для отправки вашего отчета старшему составу.").setColor("#5865F2");
         const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("WREPORTBTN").setLabel("📋 Отправить отчёт").setStyle(ButtonStyle.Primary));
         await i.channel.send({ embeds: [embed], components: [row] });
         return i.reply({ content: "✅ Панель отчётов готова.", ephemeral: true });
@@ -784,7 +783,22 @@ client.on("interactionCreate", async i => {
     console.error("❌ Критическая ошибка в обработке interaction:");
     console.error(`   Тип: ${i.isChatInputCommand() ? `команда /${i.commandName}` : i.customId || "неизвестно"}`);
     console.error(e);
-    const errText = `❌ Что-то пошло не так: \`${e.message || e}\``;
+
+    // Discord API кладёт подробности в rawError.errors — достаём их, иначе видно только общую фразу
+    let detail = e.message || String(e);
+    if (e.rawError) {
+      console.error("   rawError:", JSON.stringify(e.rawError, null, 2));
+      if (e.rawError.errors) {
+        detail += " | " + JSON.stringify(e.rawError.errors);
+      } else if (e.rawError.message) {
+        detail = e.rawError.message;
+      }
+    }
+    if (e.requestBody) {
+      console.error("   requestBody:", JSON.stringify(e.requestBody, null, 2));
+    }
+
+    const errText = `❌ Что-то пошло не так: \`${detail}\``.slice(0, 1900);
     if (!i.replied && !i.deferred) {
       await i.reply({ content: errText, ephemeral: true }).catch(() => {});
     } else if (i.deferred && !i.replied) {

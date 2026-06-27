@@ -20,20 +20,29 @@ const fs = require("fs");
 const META_IMAGE = "Gemini_Generated_Image_vx5awhvx5awhvx5a.png"; 
  
 const CONFIG = {
-  // ⚠️ ВАЖНО: Замени эти ID на новые (с твоего нового сервера), чтобы кнопки и команды работали!
-  COMMAND_CHANNEL_ID: "1497719409639297184", // Канал для отправки заявок
-  MAIN_LOG_CHANNEL: "1480227101905785113",   // Канал логов руководства
-  ROLE_ACCEPTED_ID: "1479557914086740104",   // Роль члена семьи
-  MEIN_ROLE_ID: "1480229891789160479",       // Роль 3 ранга
-  MEIN_PLUS_ROLE_ID: "1479574658935423087",  // Роль 4 ранга
-  AFK_LOG_CHANNEL: "1480228317222277171",    // Логи AFK / Отпусков
-  VACATION_ROLE: "1479988454484869271",      // Роль отпуска
+  // === 🟢 НОВЫЕ КАНАЛЫ (ОБНОВЛЕНО) ===
+  COMMAND_CHANNEL_ID: "1520394576999747677",  // Канал для панели заявок в фаму
+  MAIN_LOG_CHANNEL: "1520394577222172679",    // Логи заявок, отчетов, система повышения
+  REPORT_LOG_CHANNEL: "1520394577222172679",  // Логи еженедельных отчетов (тот же канал)
+  AFK_LOG_CHANNEL: "1520394577222172678",     // Куда кидается отчет об отпуске / логи AFK
+  AFK_COMMAND_CHANNEL: "1520394577549201414", // Канал для использования команды /afk
+  NEWS_CHANNEL_ID: "1520394577721295020",     // Канал новостей
+  WARN_SYSTEM_CHANNEL: "1520394577549201417", // Система варна (зарезервировано)
+  WARN_WORKOFF_CHANNEL: "1520394577721295019",// Отработка варна (зарезервировано)
+  
+  // === ⚠️ СТАРЫЕ ID (ИХ ЕЩЕ НУЖНО ЗАМЕНИТЬ НА НОВЫЕ!) ===
+  ROLE_ACCEPTED_ID: "1479557914086740104",    // Роль члена семьи
+  MEIN_ROLE_ID: "1480229891789160479",        // Роль 3 ранга
+  MEIN_PLUS_ROLE_ID: "1479574658935423087",   // Роль 4 ранга
+  VACATION_ROLE: "1479988454484869271",       // Роль отпуска
+  TIER_CHANNEL_ID: "1490912215341989978",     // Канал получения тира (ТЫ НЕ ДАЛ НОВЫЙ ID!)
+  FINE_ROLE_1: "1479987457591218410",         // Роль первого штрафа
+  FINE_ROLE_2: "1479987547395325984",         // Роль второго штрафа
+
   IMAGE: META_IMAGE,
-  TIER_CHANNEL_ID: "1490912215341989978",    // Канал получения тира
   TIER_IMAGE: META_IMAGE,
-  REPORT_LOG_CHANNEL: "1498782688163790978", // Канал еженедельных отчетов
  
-  // Каналы обзвона
+  // Каналы обзвона (тоже нужно будет обновить)
   INTERVIEW_CHANNELS: [
     "1480227608846143548",
     "1480227634393649324",
@@ -41,9 +50,6 @@ const CONFIG = {
     "1499718997225111702",
     "1499719070885482648"
   ],
- 
-  FINE_ROLE_1: "1479987457591218410",
-  FINE_ROLE_2: "1479987547395325984",
  
   ADMIN_ROLES: [
     "1479566887519129781",
@@ -55,10 +61,10 @@ const CONFIG = {
 };
  
 const CAPT_CONFIG = {
-  CHANNEL_ID: "1480474720683032660",
+  CHANNEL_ID: "1480474720683032660", // Канал сбора на капт (Тоже нужно поменять)
   IMAGE_URL: META_IMAGE,
   TIERS: {
-    "1": "1479566016924221510",
+    "1": "1479566016924221510", // Роли тиров
     "2": "1479565407319883806",
     "3": "1479564709354016929"
   },
@@ -197,13 +203,21 @@ client.on("interactionCreate", async i => {
         await i.deferReply({ ephemeral: true });
         const text = i.options.getString('текст');
         const embed = new EmbedBuilder().setTitle("📢 ВАЖНАЯ НОВОСТЬ META").setDescription(text).setColor("Red").setImage(CONFIG.IMAGE).setTimestamp();
+        
+        // Отправка поста в канал новостей
+        const newsCh = await i.guild.channels.fetch(CONFIG.NEWS_CHANNEL_ID).catch(() => null);
+        if (newsCh) {
+            await newsCh.send({ embeds: [embed] }).catch(() => {});
+        }
+
+        // Спам в ЛС
         await i.guild.members.fetch().catch(() => {});
         const members = i.guild.members.cache.filter(m => m.roles.cache.has(CONFIG.ROLE_ACCEPTED_ID) && !m.user.bot);
         let sent = 0;
         for (const [, m] of members) {
           try { await m.send({ embeds: [embed] }); sent++; } catch { notifyBlocked(i.guild, m); }
         }
-        return i.editReply(`✅ Новость доставлена в ЛС: **${sent}** участников.`);
+        return i.editReply(`✅ Новость опубликована в канале и доставлена в ЛС: **${sent}** участников.`);
       }
  
       if (cmd === 'спам') {
@@ -223,6 +237,7 @@ client.on("interactionCreate", async i => {
       }
  
       if (cmd === 'тир') {
+        if (i.channelId !== CONFIG.TIER_CHANNEL_ID) return i.reply({ content: "❌ Эту команду можно использовать только в канале для тира.", ephemeral: true });
         const embed = new EmbedBuilder().setTitle("🎯 ПОЛУЧЕНИЕ ТИРА (META)").setDescription("Нажмите кнопку ниже, чтобы подать заявку на проверку стрельбы.").setImage(CONFIG.TIER_IMAGE).setColor("#8A2BE2");
         const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("TIERBTN").setLabel("Получить тир").setStyle(ButtonStyle.Primary));
         await i.channel.send({ embeds: [embed], components: [row] });
@@ -249,6 +264,7 @@ client.on("interactionCreate", async i => {
       }
  
       if (cmd === 'заявка') {
+        if (i.channelId !== CONFIG.COMMAND_CHANNEL_ID) return i.reply({ content: "❌ Эту команду можно использовать только в канале заявок.", ephemeral: true });
         const embed = new EmbedBuilder().setTitle("📝 ЗАЯВКА В СЕМЬЮ META").setDescription("Нажми на кнопку ниже, чтобы заполнить анкету на вступление.").setImage(CONFIG.IMAGE).setColor("#ff0000");
         const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("apply_start").setLabel("Подать заявку").setStyle(ButtonStyle.Danger));
         await i.channel.send({ embeds: [embed], components: [row] });
@@ -256,6 +272,7 @@ client.on("interactionCreate", async i => {
       }
  
       if (cmd === 'afk') {
+        if (i.channelId !== CONFIG.AFK_COMMAND_CHANNEL) return i.reply({ content: "❌ Эту панель можно отправлять только в канале АФК.", ephemeral: true });
         const embed = new EmbedBuilder().setTitle("💤 УПРАВЛЕНИЕ AFK / ОТПУСКАМИ").setDescription("🏖 **Отпуск** — Подать заявку на отпуск.\n🌙 **Уйти в AFK** — Бот снимет роли до возвращения.\n✅ **Выйти из AFK** — Вернуть роли обратно.").setImage(CONFIG.IMAGE).setColor("#2f3136");
         const row = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId("afk_vacation").setLabel("🏖 В отпуск").setStyle(ButtonStyle.Primary),

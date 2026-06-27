@@ -12,7 +12,8 @@ const {
   StringSelectMenuOptionBuilder,
   REST,
   Routes,
-  SlashCommandBuilder
+  SlashCommandBuilder,
+  ChannelType // Добавлен импорт типа канала для веток
 } = require("discord.js");
 const fs = require("fs");
  
@@ -21,28 +22,27 @@ const META_IMAGE = "Gemini_Generated_Image_vx5awhvx5awhvx5a.png";
  
 const CONFIG = {
   // === 🟢 НОВЫЕ КАНАЛЫ (ОБНОВЛЕНО) ===
-  COMMAND_CHANNEL_ID: "1520394576999747677",  // Канал для панели заявок в фаму
-  MAIN_LOG_CHANNEL: "1520394577222172679",    // Логи заявок, отчетов, система повышения
-  REPORT_LOG_CHANNEL: "1520394577222172679",  // Логи еженедельных отчетов (тот же канал)
-  AFK_LOG_CHANNEL: "1520394577222172678",     // Куда кидается отчет об отпуске / логи AFK
-  AFK_COMMAND_CHANNEL: "1520394577549201414", // Канал для использования команды /afk
-  NEWS_CHANNEL_ID: "1520394577721295020",     // Канал новостей
-  WARN_SYSTEM_CHANNEL: "1520394577549201417", // Система варна (зарезервировано)
-  WARN_WORKOFF_CHANNEL: "1520394577721295019",// Отработка варна (зарезервировано)
+  COMMAND_CHANNEL_ID: "1520394576999747677",
+  MAIN_LOG_CHANNEL: "1520394577222172679",
+  REPORT_LOG_CHANNEL: "1520394577222172679",
+  AFK_LOG_CHANNEL: "1520394577222172678",
+  AFK_COMMAND_CHANNEL: "1520394577549201414",
+  NEWS_CHANNEL_ID: "1520394577721295020",
+  WARN_SYSTEM_CHANNEL: "1520394577549201417",
+  WARN_WORKOFF_CHANNEL: "1520394577721295019",
   
   // === ⚠️ СТАРЫЕ ID (ИХ ЕЩЕ НУЖНО ЗАМЕНИТЬ НА НОВЫЕ!) ===
-  ROLE_ACCEPTED_ID: "1479557914086740104",    // Роль члена семьи
-  MEIN_ROLE_ID: "1480229891789160479",        // Роль 3 ранга
-  MEIN_PLUS_ROLE_ID: "1479574658935423087",   // Роль 4 ранга
-  VACATION_ROLE: "1479988454484869271",       // Роль отпуска
-  TIER_CHANNEL_ID: "1490912215341989978",     // Канал получения тира (ТЫ НЕ ДАЛ НОВЫЙ ID!)
-  FINE_ROLE_1: "1479987457591218410",         // Роль первого штрафа
-  FINE_ROLE_2: "1479987547395325984",         // Роль второго штрафа
+  ROLE_ACCEPTED_ID: "1479557914086740104",
+  MEIN_ROLE_ID: "1480229891789160479",
+  MEIN_PLUS_ROLE_ID: "1479574658935423087",
+  VACATION_ROLE: "1479988454484869271",
+  TIER_CHANNEL_ID: "1490912215341989978",
+  FINE_ROLE_1: "1479987457591218410",
+  FINE_ROLE_2: "1479987547395325984",
 
   IMAGE: META_IMAGE,
   TIER_IMAGE: META_IMAGE,
  
-  // Каналы обзвона (тоже нужно будет обновить)
   INTERVIEW_CHANNELS: [
     "1480227608846143548",
     "1480227634393649324",
@@ -57,14 +57,24 @@ const CONFIG = {
     "1338140038298341396",
     "1479566383003205663",
     "1479592954795655312"
+  ],
+  
+  // === 🛡️ РОЛИ, КОТОРЫЕ МОГУТ ПРОВЕРЯТЬ ЗАЯВКИ ===
+  TICKET_ADMIN_ROLES: [
+    "1520394576467198072", 
+    "1520394576467198069", 
+    "1520394576467198073", 
+    "1520394576467198068", 
+    "1520394576467198066", 
+    "1520394576467198065"
   ]
 };
  
 const CAPT_CONFIG = {
-  CHANNEL_ID: "1480474720683032660", // Канал сбора на капт (Тоже нужно поменять)
+  CHANNEL_ID: "1480474720683032660", 
   IMAGE_URL: META_IMAGE,
   TIERS: {
-    "1": "1479566016924221510", // Роли тиров
+    "1": "1479566016924221510", 
     "2": "1479565407319883806",
     "3": "1479564709354016929"
   },
@@ -204,13 +214,11 @@ client.on("interactionCreate", async i => {
         const text = i.options.getString('текст');
         const embed = new EmbedBuilder().setTitle("📢 ВАЖНАЯ НОВОСТЬ META").setDescription(text).setColor("Red").setImage(CONFIG.IMAGE).setTimestamp();
         
-        // Отправка поста в канал новостей
         const newsCh = await i.guild.channels.fetch(CONFIG.NEWS_CHANNEL_ID).catch(() => null);
         if (newsCh) {
             await newsCh.send({ embeds: [embed] }).catch(() => {});
         }
 
-        // Спам в ЛС
         await i.guild.members.fetch().catch(() => {});
         const members = i.guild.members.cache.filter(m => m.roles.cache.has(CONFIG.ROLE_ACCEPTED_ID) && !m.user.bot);
         let sent = 0;
@@ -316,6 +324,19 @@ client.on("interactionCreate", async i => {
       }
     }
  
+    /* ================= [ ПРОВЕРКА ПРАВ ДЛЯ ЗАЯВОК (НОВОЕ) ] ================= */
+    if (i.isButton()) {
+      const isAppBtn = i.customId.startsWith("ADMWATCH.") || i.customId.startsWith("ADMFAM.") || 
+                       i.customId.startsWith("ADMCALL.") || i.customId.startsWith("ADMNO.") || 
+                       i.customId.startsWith("ADMCALLOFF.");
+      if (isAppBtn) {
+        const hasTicketPerm = CONFIG.TICKET_ADMIN_ROLES.some(r => i.member.roles.cache.has(r));
+        if (!hasTicketPerm) {
+          return i.reply({ content: "❌ Ты не можешь сделать это действие.", ephemeral: true });
+        }
+      }
+    }
+
     /* ================= [ ОБРАБОТКА КНОПОК И МОДАЛОК ] ================= */
     if (i.isButton() && i.customId === "TIERBTN") {
       const sel = new StringSelectMenuBuilder().setCustomId("TIERSEL").setPlaceholder("Выберите ваш стрелковый уровень:")
@@ -418,15 +439,20 @@ client.on("interactionCreate", async i => {
       const target = await i.guild.members.fetch(uid).catch(() => null);
       if (target) {
         await target.roles.add(CONFIG.ROLE_ACCEPTED_ID).catch(() => {});
-        target.send("🎉 Поздравляем! Ты успешно принят в семью **Meta**!").catch(() => {});
+        // Отправляем сообщение в ЛС, как ты и просил
+        target.send("🎉 Поздравляем! Вы успешно приняты в семью **Meta** от бота!").catch(() => {});
       }
       const emb = EmbedBuilder.from(i.message.embeds[0]).setColor("Green");
       emb.setFields(emb.data.fields.map(f => f.name === "📊 Статус" ? { name: "📊 Статус", value: `✅ Принял: ${i.user.username}` } : f));
+      
+      // Если действие происходит в ветке, отправляем туда уведомление
+      if (i.channel.isThread()) {
+        await i.channel.send(`✅ Кандидат <@${uid}> успешно принят в семью!`);
+      }
       return i.update({ embeds: [emb], components: [] });
     }
  
     if (i.isButton() && i.customId.startsWith("ADMCALL.")) {
-      if (!CONFIG.ADMIN_ROLES.some(r => i.member.roles.cache.has(r))) return i.reply({ content: "❌ Нет прав.", ephemeral: true });
       const uid = i.customId.split(".")[1];
       const target = await i.guild.members.fetch(uid).catch(() => null);
       
@@ -441,6 +467,11 @@ client.on("interactionCreate", async i => {
         new ButtonBuilder().setCustomId(`ADMCALLOFF.${uid}`).setLabel("🔴 Закончить обзвон").setStyle(ButtonStyle.Danger),
         new ButtonBuilder().setCustomId(`ADMNO.${uid}`).setLabel("❌ Отказать").setStyle(ButtonStyle.Danger)
       );
+
+      // Пишем сообщение в ветку
+      if (i.channel.isThread()) {
+        await i.channel.send(`📞 <@${uid}>, присоединитесь на обзвон в голосовой канал!`);
+      }
       return i.update({ embeds: [emb], components: [row] });
     }
  
@@ -474,7 +505,13 @@ client.on("interactionCreate", async i => {
         emb.setFields(emb.data.fields.map(f => f.name === "📊 Статус" ? { name: "📊 Статус", value: `❌ Отказал ${i.user.username}. Причина: ${reason}` } : f));
         await msg.edit({ embeds: [emb], components: [] });
       }
+      
       if (target) target.send(`❌ Ваша заявка в Meta отклонена. Причина: ${reason}`).catch(() => {});
+      
+      if (i.channel.isThread()) {
+        await i.channel.send(`❌ Заявка отклонена. Причина: ${reason}`);
+      }
+      
       return i.reply({ content: "✅ Отказ оформлен.", ephemeral: true });
     }
  
@@ -591,9 +628,27 @@ client.on("interactionCreate", async i => {
       return i.showModal(modal);
     }
  
+    /* ================= [ ЛОГИКА СОЗДАНИЯ ВЕТКИ ПРИ ЗАЯВКЕ (НОВОЕ) ] ================= */
     if (i.isModalSubmit() && i.customId === "applyM") {
       const log = await i.guild.channels.fetch(CONFIG.MAIN_LOG_CHANNEL).catch(() => null);
       if (!log) return i.reply({ content: "❌ Канал заявок не найден.", ephemeral: true });
+      
+      const uid = i.user.id;
+
+      // 1. Отправляем техническое сообщение для создания ветки
+      const msg = await log.send({ content: `Заявка от <@${uid}>` });
+
+      // 2. Создаем приватную ветку
+      const thread = await msg.startThread({
+        name: `Заявка - ${i.user.username}`,
+        autoArchiveDuration: 60,
+        type: ChannelType.PrivateThread
+      });
+
+      // 3. Добавляем кандидата в ветку
+      await thread.members.add(uid);
+      
+      // 4. Формируем эмбед анкеты
       const emb = new EmbedBuilder().setTitle("📩 НОВАЯ ЗАЯВКА В META").setColor("Red")
         .addFields(
           { name: "👤 Игрок", value: `${i.user}` },
@@ -602,15 +657,22 @@ client.on("interactionCreate", async i => {
           { name: "🕒 Онлайн", value: i.fields.getTextInputValue("a3") },
           { name: "📊 Статус", value: "⏳ Ожидание" }
         ).setTimestamp();
-      const uid = i.user.id;
+      
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`ADMWATCH.${uid}`).setLabel("👀 Смотрю").setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId(`ADMFAM.${uid}`).setLabel("✅ Принять сразу").setStyle(ButtonStyle.Success),
         new ButtonBuilder().setCustomId(`ADMCALL.${uid}`).setLabel("📞 Вызвать на обзвон").setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId(`ADMNO.${uid}`).setLabel("❌ Отказать").setStyle(ButtonStyle.Danger)
       );
-      await log.send({ embeds: [emb], components: [row] });
-      return i.reply({ content: "✅ Ваша анкета успешно отправлена старшему составу!", ephemeral: true });
+      
+      // 5. Отправляем заявку с кнопками внутрь созданной ветки
+      await thread.send({ 
+        content: `**Ваша заявка взята на рассмотрение!**\n<@${uid}>, ожидайте ответа старшего состава здесь.`,
+        embeds: [emb], 
+        components: [row] 
+      });
+      
+      return i.reply({ content: "✅ Ваша анкета успешно отправлена, для вас была создана личная ветка!", ephemeral: true });
     }
  
     if (i.isButton() && i.customId === "afk_on") {

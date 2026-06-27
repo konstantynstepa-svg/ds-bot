@@ -12,8 +12,7 @@ const {
   StringSelectMenuOptionBuilder,
   REST,
   Routes,
-  SlashCommandBuilder,
-  ChannelType // Добавлен импорт типа канала для веток
+  SlashCommandBuilder
 } = require("discord.js");
 const fs = require("fs");
  
@@ -21,24 +20,25 @@ const fs = require("fs");
 const META_IMAGE = "Gemini_Generated_Image_vx5awhvx5awhvx5a.png"; 
  
 const CONFIG = {
-  // === 🟢 НОВЫЕ КАНАЛЫ (ОБНОВЛЕНО) ===
-  COMMAND_CHANNEL_ID: "1520394576999747677",
-  MAIN_LOG_CHANNEL: "1520394577222172679",
-  REPORT_LOG_CHANNEL: "1520394577222172679",
-  AFK_LOG_CHANNEL: "1520394577222172678",
-  AFK_COMMAND_CHANNEL: "1520394577549201414",
-  NEWS_CHANNEL_ID: "1520394577721295020",
-  WARN_SYSTEM_CHANNEL: "1520394577549201417",
+  // === Канали ===
+  COMMAND_CHANNEL_ID: "1520394576999747677",  
+  MAIN_LOG_CHANNEL: "1520394577222172679",    
+  REPORT_LOG_CHANNEL: "1520394577222172679",  
+  AFK_LOG_CHANNEL: "1520394577222172678",     
+  AFK_COMMAND_CHANNEL: "1520394577549201414", 
+  NEWS_CHANNEL_ID: "1520394577721295020",     
+  WARN_SYSTEM_CHANNEL: "1520394577549201417", 
   WARN_WORKOFF_CHANNEL: "1520394577721295019",
-  
-  // === ⚠️ СТАРЫЕ ID (ИХ ЕЩЕ НУЖНО ЗАМЕНИТЬ НА НОВЫЕ!) ===
-  ROLE_ACCEPTED_ID: "1479557914086740104",
-  MEIN_ROLE_ID: "1480229891789160479",
-  MEIN_PLUS_ROLE_ID: "1479574658935423087",
-  VACATION_ROLE: "1479988454484869271",
   TIER_CHANNEL_ID: "1490912215341989978",
-  FINE_ROLE_1: "1479987457591218410",
-  FINE_ROLE_2: "1479987547395325984",
+  
+  // === 🟢 НОВЫЕ РОЛИ РАНГОВ ===
+  ROLE_ACCEPTED_ID: "1520394576458682395", // 1 ранг (Выдается при принятии)
+  RANK_2_ROLE_ID: "1520394576458682396",   // 2 ранг (Система повышения)
+  RANK_3_ROLE_ID: "1520394576458682397",   // 3 ранг (Система повышения)
+  
+  VACATION_ROLE: "1479988454484869271",       
+  FINE_ROLE_1: "1479987457591218410",         
+  FINE_ROLE_2: "1479987547395325984",         
 
   IMAGE: META_IMAGE,
   TIER_IMAGE: META_IMAGE,
@@ -51,16 +51,8 @@ const CONFIG = {
     "1499719070885482648"
   ],
  
+  // === 👑 АДМИН-РОЛИ (Полный доступ ко всему функционалу бота) ===
   ADMIN_ROLES: [
-    "1479566887519129781",
-    "1056945517835341936",
-    "1338140038298341396",
-    "1479566383003205663",
-    "1479592954795655312"
-  ],
-  
-  // === 🛡️ РОЛИ, КОТОРЫЕ МОГУТ ПРОВЕРЯТЬ ЗАЯВКИ ===
-  TICKET_ADMIN_ROLES: [
     "1520394576467198072", 
     "1520394576467198069", 
     "1520394576467198073", 
@@ -83,7 +75,10 @@ const CAPT_CONFIG = {
  
 const activeInterviews = new Map();
 let currentCapt = { tier1: [], tier2: [], tier3: [], subs: [] };
-const RANK_COSTS = { "3": 89, "4": 179 };
+
+// Стоимость повышения
+const RANK_COSTS = { "2": 89, "3": 179 };
+
 const EARN_OPTIONS = [
   { label: 'Капт (5 баллов)', value: 'capt_5' },
   { label: 'Заправка (3 балла)', value: 'gas_3' },
@@ -245,7 +240,6 @@ client.on("interactionCreate", async i => {
       }
  
       if (cmd === 'тир') {
-        if (i.channelId !== CONFIG.TIER_CHANNEL_ID) return i.reply({ content: "❌ Эту команду можно использовать только в канале для тира.", ephemeral: true });
         const embed = new EmbedBuilder().setTitle("🎯 ПОЛУЧЕНИЕ ТИРА (META)").setDescription("Нажмите кнопку ниже, чтобы подать заявку на проверку стрельбы.").setImage(CONFIG.TIER_IMAGE).setColor("#8A2BE2");
         const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("TIERBTN").setLabel("Получить тир").setStyle(ButtonStyle.Primary));
         await i.channel.send({ embeds: [embed], components: [row] });
@@ -261,7 +255,7 @@ client.on("interactionCreate", async i => {
       }
  
       if (cmd === 'menu') {
-        const embed = new EmbedBuilder().setTitle("💎 СИСТЕМА БАЛЛОВ И ПОВЫШЕНИЯ META").setDescription(`📜 **Цены повышения:**\n🔹 2 ➔ 3 ранг: **${RANK_COSTS["3"]} 💎**\n🔹 3 ➔ 4 ранг: **${RANK_COSTS["4"]} 💎**`).setImage(CONFIG.IMAGE).setColor("#00d4ff");
+        const embed = new EmbedBuilder().setTitle("💎 СИСТЕМА БАЛЛОВ И ПОВЫШЕНИЯ META").setDescription(`📜 **Цены повышения:**\n🔹 1 ➔ 2 ранг: **${RANK_COSTS["2"]} 💎**\n🔹 2 ➔ 3 ранг: **${RANK_COSTS["3"]} 💎**`).setImage(CONFIG.IMAGE).setColor("#00d4ff");
         const row = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId("earn_btn").setLabel("Заработать баллы").setStyle(ButtonStyle.Primary),
           new ButtonBuilder().setCustomId("balance_btn").setLabel("Мой Баланс").setStyle(ButtonStyle.Secondary),
@@ -272,7 +266,6 @@ client.on("interactionCreate", async i => {
       }
  
       if (cmd === 'заявка') {
-        if (i.channelId !== CONFIG.COMMAND_CHANNEL_ID) return i.reply({ content: "❌ Эту команду можно использовать только в канале заявок.", ephemeral: true });
         const embed = new EmbedBuilder().setTitle("📝 ЗАЯВКА В СЕМЬЮ META").setDescription("Нажми на кнопку ниже, чтобы заполнить анкету на вступление.").setImage(CONFIG.IMAGE).setColor("#ff0000");
         const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("apply_start").setLabel("Подать заявку").setStyle(ButtonStyle.Danger));
         await i.channel.send({ embeds: [embed], components: [row] });
@@ -280,7 +273,6 @@ client.on("interactionCreate", async i => {
       }
  
       if (cmd === 'afk') {
-        if (i.channelId !== CONFIG.AFK_COMMAND_CHANNEL) return i.reply({ content: "❌ Эту панель можно отправлять только в канале АФК.", ephemeral: true });
         const embed = new EmbedBuilder().setTitle("💤 УПРАВЛЕНИЕ AFK / ОТПУСКАМИ").setDescription("🏖 **Отпуск** — Подать заявку на отпуск.\n🌙 **Уйти в AFK** — Бот снимет роли до возвращения.\n✅ **Выйти из AFK** — Вернуть роли обратно.").setImage(CONFIG.IMAGE).setColor("#2f3136");
         const row = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId("afk_vacation").setLabel("🏖 В отпуск").setStyle(ButtonStyle.Primary),
@@ -324,20 +316,52 @@ client.on("interactionCreate", async i => {
       }
     }
  
-    /* ================= [ ПРОВЕРКА ПРАВ ДЛЯ ЗАЯВОК (НОВОЕ) ] ================= */
+    /* ================= [ ПРОВЕРКА ПРАВ НА КНОПКИ УПРАВЛЕНИЯ ] ================= */
     if (i.isButton()) {
       const isAppBtn = i.customId.startsWith("ADMWATCH.") || i.customId.startsWith("ADMFAM.") || 
                        i.customId.startsWith("ADMCALL.") || i.customId.startsWith("ADMNO.") || 
                        i.customId.startsWith("ADMCALLOFF.");
       if (isAppBtn) {
-        const hasTicketPerm = CONFIG.TICKET_ADMIN_ROLES.some(r => i.member.roles.cache.has(r));
-        if (!hasTicketPerm) {
+        const hasPerm = CONFIG.ADMIN_ROLES.some(r => i.member.roles.cache.has(r));
+        if (!hasPerm) {
           return i.reply({ content: "❌ Ты не можешь сделать это действие.", ephemeral: true });
         }
       }
     }
 
     /* ================= [ ОБРАБОТКА КНОПОК И МОДАЛОК ] ================= */
+    
+    // --- СИСТЕМА ПОВЫШЕНИЙ ---
+    if (i.isButton() && i.customId === "rankup_btn") {
+        let nextRankRole = null;
+        let cost = 0;
+        let rankName = "";
+        
+        // Проверяем текущий ранг
+        if (i.member.roles.cache.has(CONFIG.RANK_2_ROLE_ID)) {
+            nextRankRole = CONFIG.RANK_3_ROLE_ID;
+            cost = RANK_COSTS["3"];
+            rankName = "3 ранг";
+        } else if (i.member.roles.cache.has(CONFIG.ROLE_ACCEPTED_ID)) {
+            nextRankRole = CONFIG.RANK_2_ROLE_ID;
+            cost = RANK_COSTS["2"];
+            rankName = "2 ранг";
+        } else {
+            return i.reply({ content: "❌ Вы не состоите в семье или у вас уже максимальный ранг для автоматического повышения.", ephemeral: true });
+        }
+
+        const pts = getPoints(i.user.id);
+        if (pts < cost) {
+            return i.reply({ content: `❌ Недостаточно баллов! У вас **${pts}** 💎, а нужно **${cost}** 💎 для повышения на ${rankName}.`, ephemeral: true });
+        }
+
+        // Списываем баллы и выдаем роль
+        addPoints(i.user.id, -cost);
+        await i.member.roles.add(nextRankRole).catch(() => {});
+        
+        return i.reply({ content: `✅ Поздравляем! Вы успешно купили повышение на **${rankName}** за ${cost} 💎!`, ephemeral: true });
+    }
+
     if (i.isButton() && i.customId === "TIERBTN") {
       const sel = new StringSelectMenuBuilder().setCustomId("TIERSEL").setPlaceholder("Выберите ваш стрелковый уровень:")
         .addOptions(
@@ -438,14 +462,13 @@ client.on("interactionCreate", async i => {
       const uid = i.customId.split(".")[1];
       const target = await i.guild.members.fetch(uid).catch(() => null);
       if (target) {
+        // Выдаем 1 ранг
         await target.roles.add(CONFIG.ROLE_ACCEPTED_ID).catch(() => {});
-        // Отправляем сообщение в ЛС, как ты и просил
-        target.send("🎉 Поздравляем! Вы успешно приняты в семью **Meta** от бота!").catch(() => {});
+        target.send("🎉 Поздравляем! Вы успешно приняты в семью **Meta**! Вам выдан 1 ранг.").catch(() => {});
       }
       const emb = EmbedBuilder.from(i.message.embeds[0]).setColor("Green");
       emb.setFields(emb.data.fields.map(f => f.name === "📊 Статус" ? { name: "📊 Статус", value: `✅ Принял: ${i.user.username}` } : f));
       
-      // Если действие происходит в ветке, отправляем туда уведомление
       if (i.channel.isThread()) {
         await i.channel.send(`✅ Кандидат <@${uid}> успешно принят в семью!`);
       }
@@ -468,7 +491,6 @@ client.on("interactionCreate", async i => {
         new ButtonBuilder().setCustomId(`ADMNO.${uid}`).setLabel("❌ Отказать").setStyle(ButtonStyle.Danger)
       );
 
-      // Пишем сообщение в ветку
       if (i.channel.isThread()) {
         await i.channel.send(`📞 <@${uid}>, присоединитесь на обзвон в голосовой канал!`);
       }
@@ -628,27 +650,22 @@ client.on("interactionCreate", async i => {
       return i.showModal(modal);
     }
  
-    /* ================= [ ЛОГИКА СОЗДАНИЯ ВЕТКИ ПРИ ЗАЯВКЕ (НОВОЕ) ] ================= */
+    /* ================= [ ЛОГИКА СОЗДАНИЯ ОБЫЧНОЙ ВЕТКИ ПРИ ЗАЯВКЕ ] ================= */
     if (i.isModalSubmit() && i.customId === "applyM") {
       const log = await i.guild.channels.fetch(CONFIG.MAIN_LOG_CHANNEL).catch(() => null);
       if (!log) return i.reply({ content: "❌ Канал заявок не найден.", ephemeral: true });
       
       const uid = i.user.id;
 
-      // 1. Отправляем техническое сообщение для создания ветки
+      // Создаем обычную ветку
       const msg = await log.send({ content: `Заявка от <@${uid}>` });
-
-      // 2. Создаем приватную ветку
       const thread = await msg.startThread({
         name: `Заявка - ${i.user.username}`,
-        autoArchiveDuration: 60,
-        type: ChannelType.PrivateThread
+        autoArchiveDuration: 60
       });
 
-      // 3. Добавляем кандидата в ветку
       await thread.members.add(uid);
       
-      // 4. Формируем эмбед анкеты
       const emb = new EmbedBuilder().setTitle("📩 НОВАЯ ЗАЯВКА В META").setColor("Red")
         .addFields(
           { name: "👤 Игрок", value: `${i.user}` },
@@ -665,7 +682,6 @@ client.on("interactionCreate", async i => {
         new ButtonBuilder().setCustomId(`ADMNO.${uid}`).setLabel("❌ Отказать").setStyle(ButtonStyle.Danger)
       );
       
-      // 5. Отправляем заявку с кнопками внутрь созданной ветки
       await thread.send({ 
         content: `**Ваша заявка взята на рассмотрение!**\n<@${uid}>, ожидайте ответа старшего состава здесь.`,
         embeds: [emb], 

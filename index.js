@@ -15,11 +15,14 @@ const {
   SlashCommandBuilder
 } = require("discord.js");
 const fs = require("fs");
+const express = require("express");
+const bodyParser = require("body-parser");
 
 /* ================= [ НАСТРОЙКИ СЕМЬИ META ] ================= */
-const META_IMAGE = "https://cdn.discordapp.com/attachments/1520394577222172675/1520427420333637862/Gemini_Generated_Image_vx5awhvx5awhvx5a.png?ex=6a4127e1&is=6a3fd661&hm=169a0e6ea041e124d9ba168a5c46e5b40c09e4612d8e61355569bc521eac4cb9&";
+// Теперь это let, чтобы мы могли менять их через сайт
+let META_IMAGE = "https://cdn.discordapp.com/attachments/1520394577222172675/1520427420333637862/Gemini_Generated_Image_vx5awhvx5awhvx5a.png?ex=6a4127e1&is=6a3fd661&hm=169a0e6ea041e124d9ba168a5c46e5b40c09e4612d8e61355569bc521eac4cb9&";
 
-const CONFIG = {
+let CONFIG = {
   COMMAND_CHANNEL_ID: "1520394576999747677",
   MAIN_LOG_CHANNEL: "1520394577222172679",
   REPORT_LOG_CHANNEL: "1520394577222172679",
@@ -30,12 +33,11 @@ const CONFIG = {
   WARN_WORKOFF_CHANNEL: "1520394577721295019",
   TIER_CHANNEL_ID: "1490912215341989978",
   POINTS_CHANNEL_ID: "1520394577549201414",
-  RANKUP_LOG_CHANNEL: "1520394577222172678", // Канал проверки повышений
+  RANKUP_LOG_CHANNEL: "1520394577222172678", 
 
-  // === РОЛИ РАНГОВ ===
-  ROLE_ACCEPTED_ID: "1520394576458682395", // 1 ранг
-  RANK_2_ROLE_ID:   "1520394576458682396", // 2 ранг
-  RANK_3_ROLE_ID:   "1520394576458682397", // 3 ранг
+  ROLE_ACCEPTED_ID: "1520394576458682395", 
+  RANK_2_ROLE_ID:   "1520394576458682396", 
+  RANK_3_ROLE_ID:   "1520394576458682397", 
 
   VACATION_ROLE: "1479988454484869271",
   FINE_ROLE_1:   "1479987457591218410",
@@ -62,7 +64,7 @@ const CONFIG = {
   ]
 };
 
-const CAPT_CONFIG = {
+let CAPT_CONFIG = {
   CHANNEL_ID: "1520394577381687344",
   IMAGE_URL:  META_IMAGE,
   TIERS: {
@@ -71,6 +73,29 @@ const CAPT_CONFIG = {
     "3": "1479564709354016929"
   },
   OWNER_ID: "530064311310352415"
+};
+
+/* ================= [ ЗАГРУЗКА И СОХРАНЕНИЕ НАСТРОЕК С ВЕБ-САЙТА ] ================= */
+const SERVER_CONFIG_FILE = "server_settings.json";
+
+// Загружаем настройки из файла, если он есть
+if (fs.existsSync(SERVER_CONFIG_FILE)) {
+  try {
+    const savedSettings = JSON.parse(fs.readFileSync(SERVER_CONFIG_FILE, "utf8"));
+    CONFIG = Object.assign(CONFIG, savedSettings.CONFIG);
+    CAPT_CONFIG = Object.assign(CAPT_CONFIG, savedSettings.CAPT_CONFIG);
+  } catch(e) {
+    console.error("Ошибка загрузки настроек веб-сайта:", e);
+  }
+}
+
+// Функция для сохранения настроек
+const saveWebConfig = () => {
+  try {
+    fs.writeFileSync(SERVER_CONFIG_FILE, JSON.stringify({ CONFIG, CAPT_CONFIG }, null, 2), "utf8");
+  } catch(e) {
+    console.error("Ошибка сохранения настроек:", e);
+  }
 };
 
 /* ================= [ ИНФОРМАЦИЯ О ТИРАХ ] ================= */
@@ -388,7 +413,7 @@ client.on("interactionCreate", async i => {
         return i.editReply(`✅ Спам-оповещение отправлено **${sent}** людям.`);
       }
 
-      // /тир — показываем выбор тира с кнопкой "Ознакомление"
+      // /тир
       if (cmd === 'тир') {
         const embed = new EmbedBuilder()
           .setTitle("🎯 СИСТЕМА ТИРОВ META")
@@ -422,7 +447,7 @@ client.on("interactionCreate", async i => {
 
       // /menu
       if (cmd === 'menu') {
-        const pts = 0; // placeholder, не показываем в общем эмбеде
+        const pts = 0;
         const embed = new EmbedBuilder()
           .setTitle("🪙 СИСТЕМА МЕТА КОИНОВ")
           .setDescription(
@@ -573,10 +598,8 @@ client.on("interactionCreate", async i => {
     /* ===================================================================
        ===== СИСТЕМА ТИРОВ — ОЗНАКОМЛЕНИЕ + ПОДАЧА ЗАЯВКИ =====
     =================================================================== */
-
-    // Кнопка "TIER_INFO.N" — показываем требования тира
     if (i.isButton() && i.customId.startsWith("TIER_INFO.")) {
-      const n = i.customId.split(".")[1]; // "1", "2", "3"
+      const n = i.customId.split(".")[1];
       const info = TIER_INFO[n];
       if (!info) return i.reply({ content: "❌ Тир не найден.", ephemeral: true });
 
@@ -593,7 +616,6 @@ client.on("interactionCreate", async i => {
       return i.reply({ embeds: [embed], components: [row], ephemeral: true });
     }
 
-    // Кнопка "TIER_APPLY.N" — показываем модальное окно заявки
     if (i.isButton() && i.customId.startsWith("TIER_APPLY.")) {
       const n = i.customId.split(".")[1];
       const info = TIER_INFO[n];
@@ -628,7 +650,6 @@ client.on("interactionCreate", async i => {
       return i.showModal(modal);
     }
 
-    // Обработка модалки тира
     if (i.isModalSubmit() && /^TIERM[123]$/.test(i.customId)) {
       const n = i.customId.replace("TIERM", "");
       const logCh = await i.guild.channels.fetch(CONFIG.MAIN_LOG_CHANNEL).catch(() => null);
@@ -661,8 +682,6 @@ client.on("interactionCreate", async i => {
     /* ===================================================================
        ===== СИСТЕМА ПОВЫШЕНИЯ РАНГА =====
     =================================================================== */
-
-    // Кнопка из /menu — показываем выбор повышения
     if (i.isButton() && i.customId === "rankup_menu_btn") {
       let currentRank = 0;
       if (i.member.roles.cache.has(CONFIG.RANK_2_ROLE_ID)) currentRank = 2;
@@ -688,7 +707,6 @@ client.on("interactionCreate", async i => {
       return i.reply({ embeds: [embed], components: [row], ephemeral: true });
     }
 
-    // Кнопка "RANKUP_INFO.key" — из панели /повышение
     if (i.isButton() && i.customId.startsWith("RANKUP_INFO.")) {
       const key = i.customId.split(".")[1];
       const info = RANKUP_INFO[key];
@@ -706,7 +724,6 @@ client.on("interactionCreate", async i => {
       return i.reply({ embeds: [embed], components: [row], ephemeral: true });
     }
 
-    // Кнопка "RANKUP_APPLY.key" — показываем модалку повышения
     if (i.isButton() && i.customId.startsWith("RANKUP_APPLY.")) {
       const key = i.customId.split(".")[1];
       const info = RANKUP_INFO[key];
@@ -730,7 +747,6 @@ client.on("interactionCreate", async i => {
       return i.showModal(modal);
     }
 
-    // Обработка модалки повышения
     if (i.isModalSubmit() && i.customId.startsWith("RANKUPM.")) {
       const key = i.customId.replace("RANKUPM.", "");
       const info = RANKUP_INFO[key];
@@ -746,7 +762,6 @@ client.on("interactionCreate", async i => {
         .addFields({ name: "👤 Игрок", value: `${i.user}` })
         .setTimestamp();
 
-      // Добавляем все поля из заявки
       for (const field of info.fields) {
         try {
           const val = i.fields.getTextInputValue(field.id);
@@ -768,14 +783,12 @@ client.on("interactionCreate", async i => {
       return i.reply({ content: "✅ Заявка на повышение отправлена на проверку!", ephemeral: true });
     }
 
-    // Кнопка "RU_WATCH" — взял на проверку
     if (i.isButton() && i.customId.startsWith("RU_WATCH.")) {
       const emb = EmbedBuilder.from(i.message.embeds[0]);
       emb.setFields(emb.data.fields.map(f => f.name === "📊 Статус" ? { name: "📊 Статус", value: `👀 Проверяет: ${i.user.username}` } : f));
       return i.update({ embeds: [emb] });
     }
 
-    // Кнопка "RU_ACCEPT" — принять повышение
     if (i.isButton() && i.customId.startsWith("RU_ACCEPT.")) {
       const parts = i.customId.split(".");
       const uid         = parts[1];
@@ -785,7 +798,6 @@ client.on("interactionCreate", async i => {
 
       const target = await i.guild.members.fetch(uid).catch(() => null);
       if (target) {
-        // Снимаем предыдущий ранг и выдаем новый
         const oldRoleId = fromRank === "1" ? CONFIG.ROLE_ACCEPTED_ID : CONFIG.RANK_2_ROLE_ID;
         await target.roles.remove(oldRoleId).catch(() => {});
         await target.roles.add(roleId).catch(() => {});
@@ -796,7 +808,6 @@ client.on("interactionCreate", async i => {
       return i.update({ embeds: [emb], components: [] });
     }
 
-    // Кнопка "RU_REJECT" — отклонить повышение
     if (i.isButton() && i.customId.startsWith("RU_REJECT.")) {
       const uid = i.customId.split(".")[1];
       const modal = new ModalBuilder()
@@ -823,16 +834,12 @@ client.on("interactionCreate", async i => {
     }
 
     /* ===================================================================
-       ===== МАГАЗИН (заглушка) =====
+       ===== МАГАЗИН =====
     =================================================================== */
     if (i.isButton() && i.customId === "shop_btn") {
       const embed = new EmbedBuilder()
         .setTitle("🛒 МАГАЗИН META")
-        .setDescription(
-          "**Магазин временно недоступен.**\n\n" +
-          "Скоро здесь появятся товары, которые можно купить за 🪙 Мета Коины!\n\n" +
-          "Следите за обновлениями в канале новостей."
-        )
+        .setDescription("**Магазин временно недоступен.**\nСкоро здесь появятся товары!")
         .setColor("#95a5a6")
         .setTimestamp();
       return i.reply({ embeds: [embed], ephemeral: true });
@@ -1188,5 +1195,124 @@ client.on("interactionCreate", async i => {
       await i.editReply({ content: errText }).catch(() => {});
   }
 });
+
+
+/* ==========================================================================
+   ================= ВЕБ-СЕРВЕР И АДМИН-ПАНЕЛЬ УПРАВЛЕНИЯ ==================
+   ========================================================================== */
+
+const app = express();
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json());
+
+app.get("/", (req, res) => {
+  const input = (name, val, label) => `
+    <div style="margin-bottom:15px; text-align:left;">
+      <label style="display:block; color:#00d4ff; font-weight:bold; margin-bottom:5px;">${label}</label>
+      <input type="text" name="${name}" value="${val}" style="width:100%; padding:10px; background:#1e1e24; color:#fff; border:1px solid #444; border-radius:5px;" required>
+    </div>`;
+
+  res.send(`
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Панель Управления Meta Famq</title>
+        <style>
+          body { background:#2b2d31; color:#fff; font-family:sans-serif; padding:20px; text-align:center; }
+          .container { max-width: 800px; margin: 0 auto; background: #313338; padding: 30px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+          h1 { color: #5865F2; }
+          h2 { border-bottom: 2px solid #5865F2; padding-bottom: 10px; margin-top: 30px; color: #fff; text-align: left; }
+          .btn { background: #5865F2; color: #fff; padding: 15px; border: none; width: 100%; font-size: 18px; font-weight: bold; cursor: pointer; border-radius: 5px; margin-top: 20px; transition: background 0.3s; }
+          .btn:hover { background: #4752c4; }
+          .success { background: #2ecc71; padding: 15px; border-radius: 5px; margin-bottom: 20px; font-weight: bold; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <h1>⚙️ Панель Управления Ботом</h1>
+          ${req.query.s ? '<div class="success">✅ Настройки успешно сохранены и применены в боте!</div>' : ''}
+          
+          <form method="POST" action="/save">
+            
+            <h2>🌍 Базовые настройки</h2>
+            ${input("META_IMAGE", CONFIG.IMAGE, "Ссылка на картинку бота (Эмбеды)")}
+            ${input("ADMIN_ROLES", CONFIG.ADMIN_ROLES.join(", "), "Роли Администраторов бота (ID через запятую)")}
+
+            <h2>📂 Настройки ID Каналов</h2>
+            ${input("COMMAND_CHANNEL_ID", CONFIG.COMMAND_CHANNEL_ID, "Канал Заявок")}
+            ${input("MAIN_LOG_CHANNEL", CONFIG.MAIN_LOG_CHANNEL, "Главный канал Логов")}
+            ${input("REPORT_LOG_CHANNEL", CONFIG.REPORT_LOG_CHANNEL, "Канал Логов Отчетов")}
+            ${input("AFK_LOG_CHANNEL", CONFIG.AFK_LOG_CHANNEL, "Канал Логов AFK")}
+            ${input("AFK_COMMAND_CHANNEL", CONFIG.AFK_COMMAND_CHANNEL, "Канал для команды /afk")}
+            ${input("NEWS_CHANNEL_ID", CONFIG.NEWS_CHANNEL_ID, "Канал Новостей")}
+            ${input("TIER_CHANNEL_ID", CONFIG.TIER_CHANNEL_ID, "Канал Получения Тира")}
+            ${input("POINTS_CHANNEL_ID", CONFIG.POINTS_CHANNEL_ID, "Канал Баллов")}
+            ${input("RANKUP_LOG_CHANNEL", CONFIG.RANKUP_LOG_CHANNEL, "Канал Логов Повышений")}
+            ${input("INTERVIEW_CHANNELS", CONFIG.INTERVIEW_CHANNELS.join(", "), "Каналы Обзвона (через запятую)")}
+
+            <h2>⚔️ Настройки Каптов</h2>
+            ${input("CAPT_CHANNEL_ID", CAPT_CONFIG.CHANNEL_ID, "Канал сбора на капт")}
+            ${input("TIER_1_ROLE", CAPT_CONFIG.TIERS["1"], "Роль Tier 1")}
+            ${input("TIER_2_ROLE", CAPT_CONFIG.TIERS["2"], "Роль Tier 2")}
+            ${input("TIER_3_ROLE", CAPT_CONFIG.TIERS["3"], "Роль Tier 3")}
+
+            <h2>🎭 Настройки ID Ролей</h2>
+            ${input("ROLE_ACCEPTED_ID", CONFIG.ROLE_ACCEPTED_ID, "Роль 'Принят в семью' (1 ранг)")}
+            ${input("RANK_2_ROLE_ID", CONFIG.RANK_2_ROLE_ID, "Роль 2 ранга")}
+            ${input("RANK_3_ROLE_ID", CONFIG.RANK_3_ROLE_ID, "Роль 3 ранга")}
+            ${input("VACATION_ROLE", CONFIG.VACATION_ROLE, "Роль Отпуска/AFK")}
+            ${input("FINE_ROLE_1", CONFIG.FINE_ROLE_1, "Роль Штраф 1")}
+            ${input("FINE_ROLE_2", CONFIG.FINE_ROLE_2, "Роль Штраф 2")}
+
+            <button class="btn" type="submit">💾 СОХРАНИТЬ И ПРИМЕНИТЬ</button>
+          </form>
+        </div>
+      </body>
+    </html>
+  `);
+});
+
+app.post("/save", (req, res) => {
+  const b = req.body;
+
+  // Обновление общих каналов и ролей
+  CONFIG.IMAGE = b.META_IMAGE;
+  CONFIG.TIER_IMAGE = b.META_IMAGE;
+  CAPT_CONFIG.IMAGE_URL = b.META_IMAGE;
+
+  CONFIG.COMMAND_CHANNEL_ID = b.COMMAND_CHANNEL_ID;
+  CONFIG.MAIN_LOG_CHANNEL = b.MAIN_LOG_CHANNEL;
+  CONFIG.REPORT_LOG_CHANNEL = b.REPORT_LOG_CHANNEL;
+  CONFIG.AFK_LOG_CHANNEL = b.AFK_LOG_CHANNEL;
+  CONFIG.AFK_COMMAND_CHANNEL = b.AFK_COMMAND_CHANNEL;
+  CONFIG.NEWS_CHANNEL_ID = b.NEWS_CHANNEL_ID;
+  CONFIG.TIER_CHANNEL_ID = b.TIER_CHANNEL_ID;
+  CONFIG.POINTS_CHANNEL_ID = b.POINTS_CHANNEL_ID;
+  CONFIG.RANKUP_LOG_CHANNEL = b.RANKUP_LOG_CHANNEL;
+
+  CONFIG.ROLE_ACCEPTED_ID = b.ROLE_ACCEPTED_ID;
+  CONFIG.RANK_2_ROLE_ID = b.RANK_2_ROLE_ID;
+  CONFIG.RANK_3_ROLE_ID = b.RANK_3_ROLE_ID;
+  CONFIG.VACATION_ROLE = b.VACATION_ROLE;
+  CONFIG.FINE_ROLE_1 = b.FINE_ROLE_1;
+  CONFIG.FINE_ROLE_2 = b.FINE_ROLE_2;
+
+  CAPT_CONFIG.CHANNEL_ID = b.CAPT_CHANNEL_ID;
+  CAPT_CONFIG.TIERS["1"] = b.TIER_1_ROLE;
+  CAPT_CONFIG.TIERS["2"] = b.TIER_2_ROLE;
+  CAPT_CONFIG.TIERS["3"] = b.TIER_3_ROLE;
+
+  // Обновление массивов
+  CONFIG.ADMIN_ROLES = b.ADMIN_ROLES.split(",").map(s => s.trim()).filter(s => s.length > 0);
+  CONFIG.INTERVIEW_CHANNELS = b.INTERVIEW_CHANNELS.split(",").map(s => s.trim()).filter(s => s.length > 0);
+
+  // Сохраняем все в файл JSON
+  saveWebConfig();
+
+  console.log("⚙️ Настройки успешно обновлены через веб-панель!");
+  res.redirect("/?s=1");
+});
+
+app.listen(3000, () => console.log("🌐 Сайт админ-панели успешно запущен на http://localhost:3000"));
 
 client.login(process.env.TOKEN);

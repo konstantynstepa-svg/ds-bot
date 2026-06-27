@@ -20,14 +20,7 @@ const fs = require("fs");
 const META_IMAGE = "Gemini_Generated_Image_vx5awhvx5awhvx5a.png"; 
  
 const CONFIG = {
-  // БЕЛЫЙ СПИСОК СЕРВЕРОВ (Бот будет работать ТОЛЬКО на них)
-  ALLOWED_GUILDS: [
-    "1520394576458682388", // ТВОЙ НОВЫЙ СЕРВЕР (Уже внесён!)
-    "1046807733501968404"  // Твой старый сервер
-  ],
-
-  // ⚠️ ВАЖНО: Так как ты скопировал шаблон, тебе нужно заменить эти ID на новые!
-  // Сейчас бот не будет крашиться, если ID старые, но функции не сработают, пока не обновишь ID.
+  // ⚠️ ВАЖНО: Замени эти ID на новые (с твоего нового сервера), чтобы кнопки и команды работали!
   COMMAND_CHANNEL_ID: "1497719409639297184", // Канал для отправки заявок
   MAIN_LOG_CHANNEL: "1480227101905785113",   // Канал логов руководства
   ROLE_ACCEPTED_ID: "1479557914086740104",   // Роль члена семьи
@@ -157,17 +150,9 @@ const commands = [
   new SlashCommandBuilder().setName('отчеты').setDescription('Панель еженедельного отчёта'),
 ];
  
-/* ================= [ СОБЫТИЯ ЗАПУСКА И СЕРВЕРОВ ] ================= */
+/* ================= [ СОБЫТИЯ ЗАПУСКА ] ================= */
 client.once("ready", async () => {
   console.log(`🤖 Бот ${client.user.tag} запущен и готов к работе!`);
-  
-  // Автовыход с серверов, которых нет в белом списке
-  client.guilds.cache.forEach(async (guild) => {
-    if (!CONFIG.ALLOWED_GUILDS.includes(guild.id)) {
-      console.log(`[АНТИ-ХАК] Вышел из неразрешенного сервера: ${guild.name} (${guild.id})`);
-      await guild.leave().catch(() => {});
-    }
-  });
  
   const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
   try {
@@ -175,13 +160,6 @@ client.once("ready", async () => {
     console.log('✅ Слэш-команды успешно зарегистрированы.');
   } catch (error) {
     console.error('Ошибка регистрации команд:', error);
-  }
-});
- 
-client.on("guildCreate", async (guild) => {
-  if (!CONFIG.ALLOWED_GUILDS.includes(guild.id)) {
-    console.log(`[АНТИ-ХАК] Попытка входа на чужой сервер: ${guild.name}. Выхожу.`);
-    await guild.leave().catch(() => {});
   }
 });
  
@@ -398,7 +376,6 @@ client.on("interactionCreate", async i => {
       return i.reply({ content: "✅ Отчет отправлен руководству на рассмотрение!", ephemeral: true });
     }
  
-    // Кнопки проверок (Безопасные, без крашей бота)
     if (i.isButton() && i.customId.startsWith("ADMWATCH.")) {
       const emb = EmbedBuilder.from(i.message.embeds[0]);
       emb.setFields(emb.data.fields.map(f => f.name === "📊 Статус" ? { name: "📊 Статус", value: `👀 Проверяет: ${i.user.username}` } : f));
@@ -484,7 +461,6 @@ client.on("interactionCreate", async i => {
       return i.reply({ content: "✅ Отказ оформлен.", ephemeral: true });
     }
  
-    /* Капт система управления плюсами */
     const getTier = m => {
       if (!m || !m.roles) return "tier3";
       if (m.roles.cache.has(CAPT_CONFIG.TIERS["1"])) return "tier1";
@@ -533,7 +509,6 @@ client.on("interactionCreate", async i => {
       return i.reply({ content: "✅ Игрок удален из списков капта.", ephemeral: true });
     }
  
-    /* Система Баллов меню */
     if (i.isButton() && i.customId === "earn_btn") {
       const sel = new StringSelectMenuBuilder().setCustomId("earnsel").setPlaceholder("Выберите выполненный контракт:");
       EARN_OPTIONS.forEach(o => sel.addOptions(new StringSelectMenuOptionBuilder().setLabel(o.label).setValue(o.value)));
@@ -621,7 +596,6 @@ client.on("interactionCreate", async i => {
       return i.reply({ content: "✅ Ваша анкета успешно отправлена старшему составу!", ephemeral: true });
     }
  
-    /* AFK / ОТПУСК кнопки логики */
     if (i.isButton() && i.customId === "afk_on") {
       const roles = i.member.roles.cache.filter(r => r.id !== i.guild.id).map(r => r.id);
       afkdb.roles[i.user.id] = roles; saveAfk();

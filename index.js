@@ -201,9 +201,9 @@ const EARN_OPTIONS = [
 ];
 
 /* ================= [ БАЗА ДАННЫХ ] ================= */
-let db = { points: {} };
+let db = { points: {}, accepts: {} };
 if (fs.existsSync("db.json")) {
-  try { db = Object.assign({ points: {} }, JSON.parse(fs.readFileSync("db.json", "utf8"))); }
+  try { db = Object.assign({ points: {}, accepts: {} }, JSON.parse(fs.readFileSync("db.json", "utf8"))); }
   catch(e) { console.error("Ошибка чтения db.json:", e); }
 }
 
@@ -280,6 +280,7 @@ const commands = [
   new SlashCommandBuilder().setName('clear').setDescription('Очистить сообщения в чате').addIntegerOption(opt => opt.setName('amount').setDescription('От 1 до 100').setRequired(true)),
   new SlashCommandBuilder().setName('отчеты').setDescription('Панель еженедельного отчёта'),
   new SlashCommandBuilder().setName('повышение').setDescription('Панель повышения ранга'),
+  new SlashCommandBuilder().setName('оповещение').setDescription('Отправить важное сообщение с галочкой о прочтении').addStringOption(opt => opt.setName('текст').setDescription('Текст').setRequired(true)),
 ];
 
 /* ================= [ ЗАПУСК ] ================= */
@@ -393,6 +394,20 @@ client.on("interactionCreate", async i => {
           try { await m.send({ embeds: [embed] }); sent++; } catch { notifyBlocked(i.guild, m); }
         }
         return i.editReply(`✅ Новость опубликована. Доставлено: **${sent}** участников.`);
+      }
+      
+      // /оповещение
+      if (cmd === 'оповещение') {
+        if (!CONFIG.ADMIN_ROLES.some(r => i.member.roles.cache.has(r)))
+          return i.reply({ content: "❌ Нет прав.", ephemeral: true });
+        
+        const text = i.options.getString('текст');
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId("READ_BTN").setLabel("✅ Я прочитал").setStyle(ButtonStyle.Success)
+        );
+        
+        await i.channel.send({ content: `📢 **ВНИМАНИЕ!**\n\n${text}\n\n*Ребята, кто прочитал — ставьте галку ниже!*`, components: [row] });
+        return i.reply({ content: "✅ Оповещение отправлено.", ephemeral: true });
       }
 
       // /спам
@@ -592,6 +607,27 @@ client.on("interactionCreate", async i => {
         i.customId.startsWith("RU_WATCH.");
       if (isAdminBtn && !CONFIG.ADMIN_ROLES.some(r => i.member.roles.cache.has(r))) {
         return i.reply({ content: "❌ Ты не можешь сделать это действие.", ephemeral: true });
+      }
+    }
+    
+    /* ===================================================================
+       ===== ГАЛОЧКА О ПРОЧТЕНИИ =====
+    =================================================================== */
+    if (i.isButton() && i.customId === "READ_BTN") {
+      const msg = i.message;
+      let content = msg.content;
+      const readMarker = "\n\n**Прочитали:**";
+      
+      if (!content.includes(readMarker)) {
+        content += readMarker;
+      }
+      
+      if (!content.includes(`<@${i.user.id}>`)) {
+         content += `\n- <@${i.user.id}>`;
+         await msg.edit({ content });
+         return i.reply({ content: "✅ Отмечено как прочитанное!", ephemeral: true });
+      } else {
+         return i.reply({ content: "❌ Ты уже поставил галочку!", ephemeral: true });
       }
     }
 
@@ -991,6 +1027,19 @@ client.on("interactionCreate", async i => {
         await target.roles.add(CONFIG.ROLE_ACCEPTED_ID).catch(() => {});
         target.send("🎉 Поздравляем! Вы приняты в семью **Meta**! Вам выдан 1 ранг.").catch(() => {});
       }
+      
+      // Лог в отдельный канал без фото и эмбедов
+      const plainLogChannel = await i.guild.channels.fetch("1520495201464881214").catch(() => null);
+      if (plainLogChannel) {
+        await plainLogChannel.send(`Администратор ${i.user} принял игрока <@${uid}>.`);
+      }
+
+      // Трекинг принятых людей
+      if (!db.accepts) db.accepts = {};
+      if (!db.accepts[i.user.id]) db.accepts[i.user.id] = [];
+      db.accepts[i.user.id].push(Date.now());
+      save();
+
       const emb = EmbedBuilder.from(i.message.embeds[0]).setColor("Green");
       emb.setFields(emb.data.fields.map(f => f.name === "📊 Статус" ? { name: "📊 Статус", value: `✅ Принял: ${i.user.username}` } : f));
       return i.update({ embeds: [emb], components: [] });
@@ -1135,7 +1184,21 @@ client.on("interactionCreate", async i => {
         new ButtonBuilder().setCustomId(`WRFINE1.${uid}`).setLabel("⚠️ Штраф 1").setStyle(ButtonStyle.Danger)
       );
       await repCh.send({ embeds: [emb], components: [row] });
-      return i.reply({ content: "✅ Отчет отправлен руководству!", ephemeral: true });
+
+      // Проверка нормы за последние 3 дня
+      const threeDaysAgo = Date.now() - (3 * 24 * 60 * 60 * 1000);
+      const userAccepts = (db.accepts && db.accepts[uid] ? db.accepts[uid] : []).filter(time => time >= threeDaysAgo).length;
+
+      let replyText = "✅ Отчет отправлен руководству!";
+      if (userAccepts === 0) {
+        replyText += "\n\n🤖 **Ответ от бота:** оо братан вот это ты постарался на рекруте респект и уважуха за то что принял 0 человек спасибо.";
+      } else if (userAccepts >= 8) {
+        replyText += "\n\n🤖 **Ответ от бота:** красава норма выполнена тебе ожидают нормальные чаевые!";
+      } else {
+        replyText += `\n\n🤖 **Ответ от бота:** Брат, ты принял всего ${userAccepts} чел. за последние 3 дня. Норма — 8 человек. Ты не выполнил норму, твоя зарплата будет меньше!`;
+      }
+
+      return i.reply({ content: replyText, ephemeral: true });
     }
 
     if (i.isButton() && i.customId.startsWith("WRWATCH.")) {

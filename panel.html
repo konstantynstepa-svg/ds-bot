@@ -1,0 +1,1107 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>META Family — Панель управления</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
+
+    :root {
+      --bg:        #0d0e11;
+      --surface:   #16181d;
+      --surface2:  #1e2028;
+      --border:    #2a2d38;
+      --accent:    #5865f2;
+      --accent2:   #7289da;
+      --green:     #2ecc71;
+      --yellow:    #f1c40f;
+      --red:       #e74c3c;
+      --text:      #e8eaf0;
+      --muted:     #6b7280;
+      --glow:      rgba(88,101,242,0.18);
+    }
+
+    * { margin:0; padding:0; box-sizing:border-box; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      display: flex;
+    }
+
+    /* ===== SIDEBAR ===== */
+    .sidebar {
+      width: 240px;
+      min-height: 100vh;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      top: 0; left: 0;
+      z-index: 100;
+    }
+
+    .logo {
+      padding: 24px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logo-title {
+      font-size: 20px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #5865f2, #9b59b6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: -0.5px;
+    }
+
+    .logo-sub {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+      font-weight: 500;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .nav {
+      flex: 1;
+      padding: 16px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .nav-section {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--muted);
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      padding: 12px 8px 6px;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--muted);
+      transition: all 0.15s ease;
+      border: none;
+      background: none;
+      width: 100%;
+      text-align: left;
+    }
+
+    .nav-item:hover {
+      background: var(--surface2);
+      color: var(--text);
+    }
+
+    .nav-item.active {
+      background: var(--glow);
+      color: var(--accent2);
+      border: 1px solid rgba(88,101,242,0.3);
+    }
+
+    .nav-item .icon { font-size: 16px; width: 20px; text-align: center; }
+
+    .sidebar-footer {
+      padding: 16px;
+      border-top: 1px solid var(--border);
+    }
+
+    .bot-status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      background: var(--surface2);
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 6px var(--green);
+      flex-shrink: 0;
+    }
+
+    .status-dot.offline { background: var(--red); box-shadow: 0 0 6px var(--red); }
+
+    .status-info { flex: 1; min-width: 0; }
+    .status-name { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .status-label { font-size: 11px; color: var(--green); }
+
+    /* ===== MAIN ===== */
+    .main {
+      margin-left: 240px;
+      flex: 1;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .topbar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+
+    .page-title {
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .page-sub {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 1px;
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .save-btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 9px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      font-family: 'Inter', sans-serif;
+    }
+
+    .save-btn:hover { background: #4752c4; transform: translateY(-1px); }
+    .save-btn:active { transform: translateY(0); }
+
+    .content {
+      padding: 32px;
+      flex: 1;
+    }
+
+    /* ===== PANELS ===== */
+    .panel {
+      display: none;
+    }
+    .panel.active { display: block; }
+
+    /* ===== STAT CARDS ===== */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .stat-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+    }
+
+    .stat-card.blue::before  { background: var(--accent); }
+    .stat-card.green::before { background: var(--green); }
+    .stat-card.yellow::before{ background: var(--yellow); }
+    .stat-card.red::before   { background: var(--red); }
+
+    .stat-icon { font-size: 24px; margin-bottom: 12px; }
+    .stat-value { font-size: 32px; font-weight: 800; line-height: 1; font-family: 'JetBrains Mono', monospace; }
+    .stat-label { font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+    /* ===== SECTION ===== */
+    .section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+
+    .section-header {
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .section-icon { font-size: 18px; }
+
+    .section-title {
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .section-desc {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 1px;
+    }
+
+    .section-body { padding: 24px; }
+
+    /* ===== FORM GRID ===== */
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .form-grid.single { grid-template-columns: 1fr; }
+    .form-grid.three  { grid-template-columns: 1fr 1fr 1fr; }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .field label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .field input {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: var(--text);
+      font-size: 13px;
+      font-family: 'JetBrains Mono', monospace;
+      transition: border-color 0.15s;
+      width: 100%;
+    }
+
+    .field input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(88,101,242,0.1);
+    }
+
+    .field input::placeholder { color: var(--muted); }
+
+    /* ===== TABLE ===== */
+    .table-wrap { overflow-x: auto; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th {
+      text-align: left;
+      padding: 10px 16px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    td {
+      padding: 14px 16px;
+      font-size: 13px;
+      border-bottom: 1px solid rgba(42,45,56,0.5);
+    }
+
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--surface2); }
+
+    .badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .badge.tier1  { background: rgba(231,76,60,0.15);  color: #e74c3c; border: 1px solid rgba(231,76,60,0.3); }
+    .badge.tier2  { background: rgba(241,196,15,0.15); color: #f1c40f; border: 1px solid rgba(241,196,15,0.3); }
+    .badge.tier3  { background: rgba(46,204,113,0.15); color: #2ecc71; border: 1px solid rgba(46,204,113,0.3); }
+    .badge.rank1  { background: rgba(107,114,128,0.15);color: #9ca3af; border: 1px solid rgba(107,114,128,0.3); }
+    .badge.rank2  { background: rgba(88,101,242,0.15); color: #7289da; border: 1px solid rgba(88,101,242,0.3); }
+    .badge.rank3  { background: rgba(155,89,182,0.15); color: #9b59b6; border: 1px solid rgba(155,89,182,0.3); }
+
+    .mono { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--muted); }
+
+    /* ===== TOAST ===== */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--green);
+      color: #fff;
+      padding: 14px 20px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      transform: translateY(80px);
+      opacity: 0;
+      transition: all 0.3s cubic-bezier(0.34,1.56,0.64,1);
+      z-index: 999;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .toast.show { transform: translateY(0); opacity: 1; }
+
+    /* ===== OVERVIEW QUICK ACTIONS ===== */
+    .quick-actions {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .quick-btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.15s;
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+    }
+
+    .quick-btn:hover {
+      border-color: var(--accent);
+      background: var(--glow);
+      transform: translateY(-2px);
+    }
+
+    .quick-btn .q-icon { font-size: 22px; margin-bottom: 8px; }
+    .quick-btn .q-title { font-size: 13px; font-weight: 700; }
+    .quick-btn .q-desc  { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+    /* ===== DANGER ZONE ===== */
+    .danger-zone {
+      border-color: rgba(231,76,60,0.3) !important;
+    }
+
+    .danger-zone .section-header {
+      border-bottom-color: rgba(231,76,60,0.2);
+    }
+
+    .danger-btn {
+      background: rgba(231,76,60,0.1);
+      border: 1px solid rgba(231,76,60,0.3);
+      color: var(--red);
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: 'Inter', sans-serif;
+      transition: all 0.15s;
+    }
+
+    .danger-btn:hover { background: rgba(231,76,60,0.2); }
+
+    /* ===== RESPONSIVE ===== */
+    @media (max-width: 1100px) {
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      .form-grid.three { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="logo">
+    <div class="logo-title">⚡ META Family</div>
+    <div class="logo-sub">Панель управления</div>
+  </div>
+
+  <nav class="nav">
+    <div class="nav-section">Обзор</div>
+    <button class="nav-item active" onclick="showPanel('overview', this)">
+      <span class="icon">🏠</span> Главная
+    </button>
+
+    <div class="nav-section">Настройки</div>
+    <button class="nav-item" onclick="showPanel('channels', this)">
+      <span class="icon">📢</span> Каналы
+    </button>
+    <button class="nav-item" onclick="showPanel('roles', this)">
+      <span class="icon">🎭</span> Роли
+    </button>
+    <button class="nav-item" onclick="showPanel('capt', this)">
+      <span class="icon">⚔️</span> Капт
+    </button>
+    <button class="nav-item" onclick="showPanel('image', this)">
+      <span class="icon">🖼️</span> Изображения
+    </button>
+
+    <div class="nav-section">Игроки</div>
+    <button class="nav-item" onclick="showPanel('players', this)">
+      <span class="icon">👥</span> Участники
+    </button>
+    <button class="nav-item" onclick="showPanel('tiers', this)">
+      <span class="icon">🎯</span> Тиры
+    </button>
+  </nav>
+
+  <div class="sidebar-footer">
+    <div class="bot-status" id="botStatus">
+      <div class="status-dot" id="statusDot"></div>
+      <div class="status-info">
+        <div class="status-name" id="statusName">META BOT</div>
+        <div class="status-label" id="statusLabel">Загрузка...</div>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<main class="main">
+  <div class="topbar">
+    <div>
+      <div class="page-title" id="pageTitle">🏠 Главная</div>
+      <div class="page-sub" id="pageSub">Обзор системы META Family</div>
+    </div>
+    <div class="topbar-right">
+      <button class="save-btn" onclick="saveSettings()">💾 Сохранить</button>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- ===== OVERVIEW ===== -->
+    <div class="panel active" id="panel-overview">
+      <div class="stats-grid">
+        <div class="stat-card blue">
+          <div class="stat-icon">👥</div>
+          <div class="stat-value" id="stat-members">—</div>
+          <div class="stat-label">Участников в семье</div>
+        </div>
+        <div class="stat-card green">
+          <div class="stat-icon">🪙</div>
+          <div class="stat-value" id="stat-coins">—</div>
+          <div class="stat-label">Мета Коинов выдано</div>
+        </div>
+        <div class="stat-card yellow">
+          <div class="stat-icon">🎯</div>
+          <div class="stat-value" id="stat-tiers">—</div>
+          <div class="stat-label">Тиров выдано</div>
+        </div>
+        <div class="stat-card red">
+          <div class="stat-icon">📋</div>
+          <div class="stat-value" id="stat-apps">—</div>
+          <div class="stat-label">Заявок обработано</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">
+          <span class="section-icon">⚡</span>
+          <div>
+            <div class="section-title">Быстрые действия</div>
+            <div class="section-desc">Часто используемые настройки</div>
+          </div>
+        </div>
+        <div class="section-body">
+          <div class="quick-actions">
+            <button class="quick-btn" onclick="showPanel('channels', document.querySelector('[onclick*=channels]'))">
+              <div class="q-icon">📢</div>
+              <div class="q-title">Настроить каналы</div>
+              <div class="q-desc">ID каналов для логов и команд</div>
+            </button>
+            <button class="quick-btn" onclick="showPanel('roles', document.querySelector('[onclick*=roles]'))">
+              <div class="q-icon">🎭</div>
+              <div class="q-title">Настроить роли</div>
+              <div class="q-desc">Роли рангов, тиров и штрафов</div>
+            </button>
+            <button class="quick-btn" onclick="showPanel('capt', document.querySelector('[onclick*=capt]'))">
+              <div class="q-icon">⚔️</div>
+              <div class="q-title">Настройки капта</div>
+              <div class="q-desc">Канал и роли для капта</div>
+            </button>
+            <button class="quick-btn" onclick="showPanel('players', document.querySelector('[onclick*=players]'))">
+              <div class="q-icon">👥</div>
+              <div class="q-title">Балансы игроков</div>
+              <div class="q-desc">Просмотр Мета Коинов</div>
+            </button>
+            <button class="quick-btn" onclick="showPanel('tiers', document.querySelector('[onclick*=tiers]'))">
+              <div class="q-icon">🎯</div>
+              <div class="q-title">Тиры участников</div>
+              <div class="q-desc">Кто какой тир имеет</div>
+            </button>
+            <button class="quick-btn" onclick="showPanel('image', document.querySelector('[onclick*=image]'))">
+              <div class="q-icon">🖼️</div>
+              <div class="q-title">Картинка бота</div>
+              <div class="q-desc">Изображение в эмбедах</div>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">
+          <span class="section-icon">📊</span>
+          <div>
+            <div class="section-title">Топ игроков по Мета Коинам</div>
+            <div class="section-desc">Загружается с сервера</div>
+          </div>
+        </div>
+        <div class="section-body">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Discord ID</th>
+                  <th>Мета Коины</th>
+                </tr>
+              </thead>
+              <tbody id="topPlayersTable">
+                <tr><td colspan="3" style="text-align:center;color:var(--muted);padding:24px">⏳ Загрузка...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== CHANNELS ===== -->
+    <div class="panel" id="panel-channels">
+      <div class="section">
+        <div class="section-header">
+          <span class="section-icon">📢</span>
+          <div>
+            <div class="section-title">Основные каналы</div>
+            <div class="section-desc">ID каналов Discord (18-значные числа)</div>
+          </div>
+        </div>
+        <div class="section-body">
+          <div class="form-grid">
+            <div class="field">
+              <label>Канал заявок</label>
+              <input type="text" id="COMMAND_CHANNEL_ID" placeholder="1520394576999747677">
+            </div>
+            <div class="field">
+              <label>Главный канал логов</label>
+              <input type="text" id="MAIN_LOG_CHANNEL" placeholder="1520394577222172679">
+            </div>
+            <div class="field">
+              <label>Канал логов отчётов</label>
+              <input type="text" id="REPORT_LOG_CHANNEL" placeholder="1520394577222172679">
+            </div>
+            <div class="field">
+              <label>Канал логов AFK</label>
+              <input type="text" id="AFK_LOG_CHANNEL" placeholder="1520394577222172679">
+            </div>
+            <div class="field">
+              <label>Канал команды /afk</label>
+              <input type="text" id="AFK_COMMAND_CHANNEL" placeholder="1520394577721295020">
+            </div>
+            <div class="field">
+              <label>Канал новостей</label>
+              <input type="text" id="NEWS_CHANNEL_ID" placeholder="1520394577549201415">
+            </div>
+            <div class="field">
+              <label>Канал получения тира</label>
+              <input type="text" id="TIER_CHANNEL_ID" placeholder="1490912215341989978">
+            </div>
+            <div class="field">
+              <label>Канал Мета Коинов</label>
+              <input type="text" id="POINTS_CHANNEL_ID" placeholder="1520394577549201414">
+            </div>
+            <div class="field">
+              <label>Канал логов повышений</label>
+              <input type="text" id="RANKUP_LOG_CHANNEL" placeholder="1520394577222172678">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">
+          <span class="section-icon">🎙️</span>
+          <div>
+            <div class="section-title">Каналы обзвона</div>
+            <div class="section-desc">ID через запятую</div>
+          </div>
+        </div>
+        <div class="section-body">
+          <div class="form-grid single">
+            <div class="field">
+              <label>Каналы интервью (через запятую)</label>
+              <input type="text" id="INTERVIEW_CHANNELS" placeholder="1480227608846143548, 1480227634393649324, ...">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== ROLES ===== -->
+    <div class="panel" id="panel-roles">
+      <div class="section">
+        <div class="section-header">
+          <span class="section-icon">🏅</span>
+          <div>
+            <div class="section-title">Роли рангов</div>
+            <div class="section-desc">ID ролей для системы повышения</div>
+          </div>
+        </div>
+        <div class="section-body">
+          <div class="form-grid three">
+            <div class="field">
+              <label>1 ранг (принят)</label>
+              <input type="text" id="ROLE_ACCEPTED_ID" placeholder="ID роли">
+            </div>
+            <div class="field">
+              <label>2 ранг</label>
+              <input type="text" id="RANK_2_ROLE_ID" placeholder="ID роли">
+            </div>
+            <div class="field">
+              <label>3 ранг</label>
+              <input type="text" id="RANK_3_ROLE_ID" placeholder="ID роли">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">
+          <span class="section-icon">⚠️</span>
+          <div>
+            <div class="section-title">Специальные роли</div>
+            <div class="section-desc">AFK, штрафы и прочее</div>
+          </div>
+        </div>
+        <div class="section-body">
+          <div class="form-grid three">
+            <div class="field">
+              <label>Роль отпуска / AFK</label>
+              <input type="text" id="VACATION_ROLE" placeholder="ID роли">
+            </div>
+            <div class="field">
+              <label>Штраф 1</label>
+              <input type="text" id="FINE_ROLE_1" placeholder="ID роли">
+            </div>
+            <div class="field">
+              <label>Штраф 2</label>
+              <input type="text" id="FINE_ROLE_2" placeholder="ID роли">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">
+          <span class="section-icon">👑</span>
+          <div>
+            <div class="section-title">Роли администраторов</div>
+            <div class="section-desc">ID через запятую — эти роли имеют доступ ко всем командам бота</div>
+          </div>
+        </div>
+        <div class="section-body">
+          <div class="form-grid single">
+            <div class="field">
+              <label>Админ роли (через запятую)</label>
+              <input type="text" id="ADMIN_ROLES" placeholder="ID1, ID2, ID3...">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== CAPT ===== -->
+    <div class="panel" id="panel-capt">
+      <div class="section">
+        <div class="section-header">
+          <span class="section-icon">⚔️</span>
+          <div>
+            <div class="section-title">Настройки капта</div>
+            <div class="section-desc">Канал сбора и роли тиров для капта</div>
+          </div>
+        </div>
+        <div class="section-body">
+          <div class="form-grid">
+            <div class="field">
+              <label>Канал капта</label>
+              <input type="text" id="CAPT_CHANNEL_ID" placeholder="ID канала">
+            </div>
+            <div class="field" style="grid-column: span 1"></div>
+            <div class="field">
+              <label>🔴 Роль Tier 1</label>
+              <input type="text" id="TIER_1_ROLE" placeholder="ID роли">
+            </div>
+            <div class="field">
+              <label>🟡 Роль Tier 2</label>
+              <input type="text" id="TIER_2_ROLE" placeholder="ID роли">
+            </div>
+            <div class="field">
+              <label>🟢 Роль Tier 3</label>
+              <input type="text" id="TIER_3_ROLE" placeholder="ID роли">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== IMAGE ===== -->
+    <div class="panel" id="panel-image">
+      <div class="section">
+        <div class="section-header">
+          <span class="section-icon">🖼️</span>
+          <div>
+            <div class="section-title">Изображение эмбедов</div>
+            <div class="section-desc">Ссылка на картинку которая показывается в эмбедах бота</div>
+          </div>
+        </div>
+        <div class="section-body">
+          <div class="form-grid single">
+            <div class="field">
+              <label>Ссылка на картинку (Discord CDN, Imgur и т.д.)</label>
+              <input type="text" id="META_IMAGE" placeholder="https://...">
+            </div>
+          </div>
+          <div id="imagePreview" style="margin-top:16px; display:none;">
+            <p style="font-size:12px;color:var(--muted);margin-bottom:8px;">Предпросмотр:</p>
+            <img id="previewImg" style="max-width:400px;border-radius:8px;border:1px solid var(--border);" alt="preview">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== PLAYERS ===== -->
+    <div class="panel" id="panel-players">
+      <div class="section">
+        <div class="section-header">
+          <span class="section-icon">👥</span>
+          <div>
+            <div class="section-title">Балансы участников</div>
+            <div class="section-desc">Мета Коины всех игроков</div>
+          </div>
+        </div>
+        <div class="section-body">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Discord ID</th>
+                  <th>Мета Коины</th>
+                  <th>Действие</th>
+                </tr>
+              </thead>
+              <tbody id="playersTable">
+                <tr><td colspan="3" style="text-align:center;color:var(--muted);padding:24px">⏳ Загрузка...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== TIERS ===== -->
+    <div class="panel" id="panel-tiers">
+      <div class="section">
+        <div class="section-header">
+          <span class="section-icon">🎯</span>
+          <div>
+            <div class="section-title">Требования тиров</div>
+            <div class="section-desc">Информация о требованиях для каждого тира</div>
+          </div>
+        </div>
+        <div class="section-body">
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;">
+
+            <div style="background:rgba(46,204,113,0.05);border:1px solid rgba(46,204,113,0.2);border-radius:10px;padding:20px;">
+              <div style="font-size:20px;margin-bottom:8px;">🟢</div>
+              <div style="font-weight:700;font-size:15px;color:#2ecc71;margin-bottom:12px;">Tier 3 — Слабый</div>
+              <ul style="list-style:none;display:flex;flex-direction:column;gap:6px;">
+                <li style="font-size:13px;color:var(--muted)">✅ Откат спешик + сайга</li>
+                <li style="font-size:13px;color:var(--muted)">✅ КД минимум <b style="color:var(--text)">0.9</b></li>
+                <li style="font-size:13px;color:var(--muted)">✅ Арена от <b style="color:var(--text)">6 человек</b></li>
+              </ul>
+            </div>
+
+            <div style="background:rgba(241,196,15,0.05);border:1px solid rgba(241,196,15,0.2);border-radius:10px;padding:20px;">
+              <div style="font-size:20px;margin-bottom:8px;">🟡</div>
+              <div style="font-weight:700;font-size:15px;color:#f1c40f;margin-bottom:12px;">Tier 2 — Средний</div>
+              <ul style="list-style:none;display:flex;flex-direction:column;gap:6px;">
+                <li style="font-size:13px;color:var(--muted)">✅ <b style="color:var(--text)">6 откатов</b> арены (6+ чел.)</li>
+                <li style="font-size:13px;color:var(--muted)">✅ КД минимум <b style="color:var(--text)">1.1</b></li>
+                <li style="font-size:13px;color:var(--muted)">✅ Откат спешик + сайга</li>
+              </ul>
+            </div>
+
+            <div style="background:rgba(231,76,60,0.05);border:1px solid rgba(231,76,60,0.2);border-radius:10px;padding:20px;">
+              <div style="font-size:20px;margin-bottom:8px;">🔴</div>
+              <div style="font-weight:700;font-size:15px;color:#e74c3c;margin-bottom:12px;">Tier 1 — Сильный</div>
+              <ul style="list-style:none;display:flex;flex-direction:column;gap:6px;">
+                <li style="font-size:13px;color:var(--muted)">✅ <b style="color:var(--text)">9 откатов</b> арены (6+ чел.)</li>
+                <li style="font-size:13px;color:var(--muted)">✅ КД минимум <b style="color:var(--text)">1.5</b></li>
+                <li style="font-size:13px;color:var(--muted)">✅ <b style="color:var(--text)">12 скринов</b> МП семьи</li>
+              </ul>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<!-- TOAST -->
+<div class="toast" id="toast">✅ Настройки сохранены!</div>
+
+<script>
+  const API = ''; // Пустая строка = тот же сервер (Railway)
+
+  // ===== НАВИГАЦИЯ =====
+  function showPanel(name, btn) {
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+    document.getElementById('panel-' + name).classList.add('active');
+    if (btn) btn.classList.add('active');
+
+    const titles = {
+      overview: ['🏠 Главная', 'Обзор системы META Family'],
+      channels:  ['📢 Каналы', 'Настройка ID каналов Discord'],
+      roles:     ['🎭 Роли', 'Настройка ID ролей Discord'],
+      capt:      ['⚔️ Капт', 'Настройки войны семей'],
+      image:     ['🖼️ Изображения', 'Картинка в эмбедах бота'],
+      players:   ['👥 Участники', 'Балансы Мета Коинов'],
+      tiers:     ['🎯 Тиры', 'Требования и информация о тирах'],
+    };
+    const [title, sub] = titles[name] || ['', ''];
+    document.getElementById('pageTitle').textContent = title;
+    document.getElementById('pageSub').textContent = sub;
+  }
+
+  // ===== ЗАГРУЗКА НАСТРОЕК =====
+  async function loadSettings() {
+    try {
+      const res = await fetch(API + '/api/settings');
+      const data = await res.json();
+
+      // Каналы
+      setVal('COMMAND_CHANNEL_ID', data.CONFIG?.COMMAND_CHANNEL_ID);
+      setVal('MAIN_LOG_CHANNEL',   data.CONFIG?.MAIN_LOG_CHANNEL);
+      setVal('REPORT_LOG_CHANNEL', data.CONFIG?.REPORT_LOG_CHANNEL);
+      setVal('AFK_LOG_CHANNEL',    data.CONFIG?.AFK_LOG_CHANNEL);
+      setVal('AFK_COMMAND_CHANNEL',data.CONFIG?.AFK_COMMAND_CHANNEL);
+      setVal('NEWS_CHANNEL_ID',    data.CONFIG?.NEWS_CHANNEL_ID);
+      setVal('TIER_CHANNEL_ID',    data.CONFIG?.TIER_CHANNEL_ID);
+      setVal('POINTS_CHANNEL_ID',  data.CONFIG?.POINTS_CHANNEL_ID);
+      setVal('RANKUP_LOG_CHANNEL', data.CONFIG?.RANKUP_LOG_CHANNEL);
+      setVal('INTERVIEW_CHANNELS', (data.CONFIG?.INTERVIEW_CHANNELS || []).join(', '));
+
+      // Роли
+      setVal('ROLE_ACCEPTED_ID', data.CONFIG?.ROLE_ACCEPTED_ID);
+      setVal('RANK_2_ROLE_ID',   data.CONFIG?.RANK_2_ROLE_ID);
+      setVal('RANK_3_ROLE_ID',   data.CONFIG?.RANK_3_ROLE_ID);
+      setVal('VACATION_ROLE',    data.CONFIG?.VACATION_ROLE);
+      setVal('FINE_ROLE_1',      data.CONFIG?.FINE_ROLE_1);
+      setVal('FINE_ROLE_2',      data.CONFIG?.FINE_ROLE_2);
+      setVal('ADMIN_ROLES',      (data.CONFIG?.ADMIN_ROLES || []).join(', '));
+
+      // Капт
+      setVal('CAPT_CHANNEL_ID', data.CAPT_CONFIG?.CHANNEL_ID);
+      setVal('TIER_1_ROLE',     data.CAPT_CONFIG?.TIERS?.['1']);
+      setVal('TIER_2_ROLE',     data.CAPT_CONFIG?.TIERS?.['2']);
+      setVal('TIER_3_ROLE',     data.CAPT_CONFIG?.TIERS?.['3']);
+
+      // Картинка
+      setVal('META_IMAGE', data.CONFIG?.IMAGE);
+
+      // Статус бота
+      document.getElementById('statusLabel').textContent = 'Онлайн';
+      document.getElementById('statusLabel').style.color = '#2ecc71';
+    } catch(e) {
+      document.getElementById('statusDot').classList.add('offline');
+      document.getElementById('statusLabel').textContent = 'Ошибка подключения';
+      document.getElementById('statusLabel').style.color = '#e74c3c';
+    }
+  }
+
+  // ===== ЗАГРУЗКА ИГРОКОВ =====
+  async function loadPlayers() {
+    try {
+      const res = await fetch(API + '/api/players');
+      const data = await res.json();
+
+      const sorted = Object.entries(data).sort((a,b) => b[1] - a[1]);
+
+      // Стат
+      const total = sorted.reduce((s,[,v]) => s + v, 0);
+      document.getElementById('stat-members').textContent = sorted.length;
+      document.getElementById('stat-coins').textContent = total;
+      document.getElementById('stat-tiers').textContent = '—';
+      document.getElementById('stat-apps').textContent = '—';
+
+      // Топ таблица
+      const topHtml = sorted.slice(0, 10).map(([id, pts], idx) => `
+        <tr>
+          <td style="color:var(--muted);font-weight:700">${idx + 1}</td>
+          <td><span class="mono">${id}</span></td>
+          <td><b style="color:#f1c40f">${pts}</b> 🪙</td>
+        </tr>
+      `).join('') || '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:24px">Нет данных</td></tr>';
+      document.getElementById('topPlayersTable').innerHTML = topHtml;
+
+      // Полная таблица
+      const playersHtml = sorted.map(([id, pts]) => `
+        <tr>
+          <td><span class="mono">${id}</span></td>
+          <td><b style="color:#f1c40f">${pts}</b> 🪙</td>
+          <td>
+            <button onclick="editCoins('${id}', ${pts})" style="background:rgba(88,101,242,0.1);border:1px solid rgba(88,101,242,0.3);color:#7289da;padding:5px 12px;border-radius:6px;cursor:pointer;font-size:12px;font-family:Inter,sans-serif;">✏️ Изменить</button>
+          </td>
+        </tr>
+      `).join('') || '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:24px">Нет данных</td></tr>';
+      document.getElementById('playersTable').innerHTML = playersHtml;
+    } catch(e) {
+      document.getElementById('topPlayersTable').innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:24px">❌ Ошибка загрузки</td></tr>';
+      document.getElementById('playersTable').innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:24px">❌ Ошибка загрузки</td></tr>';
+    }
+  }
+
+  // ===== ИЗМЕНИТЬ КОИНЫ =====
+  async function editCoins(id, current) {
+    const val = prompt(`Мета Коины для ${id}\nТекущий баланс: ${current}\n\nВведите новое значение:`, current);
+    if (val === null) return;
+    const num = parseInt(val);
+    if (isNaN(num)) return alert('Введите число!');
+    try {
+      await fetch(API + '/api/setcoins', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, amount: num })
+      });
+      showToast('✅ Баланс обновлён!');
+      loadPlayers();
+    } catch(e) {
+      alert('Ошибка: ' + e.message);
+    }
+  }
+
+  // ===== СОХРАНИТЬ НАСТРОЙКИ =====
+  async function saveSettings() {
+    const settings = {
+      COMMAND_CHANNEL_ID:  getVal('COMMAND_CHANNEL_ID'),
+      MAIN_LOG_CHANNEL:    getVal('MAIN_LOG_CHANNEL'),
+      REPORT_LOG_CHANNEL:  getVal('REPORT_LOG_CHANNEL'),
+      AFK_LOG_CHANNEL:     getVal('AFK_LOG_CHANNEL'),
+      AFK_COMMAND_CHANNEL: getVal('AFK_COMMAND_CHANNEL'),
+      NEWS_CHANNEL_ID:     getVal('NEWS_CHANNEL_ID'),
+      TIER_CHANNEL_ID:     getVal('TIER_CHANNEL_ID'),
+      POINTS_CHANNEL_ID:   getVal('POINTS_CHANNEL_ID'),
+      RANKUP_LOG_CHANNEL:  getVal('RANKUP_LOG_CHANNEL'),
+      INTERVIEW_CHANNELS:  getVal('INTERVIEW_CHANNELS'),
+      ROLE_ACCEPTED_ID:    getVal('ROLE_ACCEPTED_ID'),
+      RANK_2_ROLE_ID:      getVal('RANK_2_ROLE_ID'),
+      RANK_3_ROLE_ID:      getVal('RANK_3_ROLE_ID'),
+      VACATION_ROLE:       getVal('VACATION_ROLE'),
+      FINE_ROLE_1:         getVal('FINE_ROLE_1'),
+      FINE_ROLE_2:         getVal('FINE_ROLE_2'),
+      ADMIN_ROLES:         getVal('ADMIN_ROLES'),
+      CAPT_CHANNEL_ID:     getVal('CAPT_CHANNEL_ID'),
+      TIER_1_ROLE:         getVal('TIER_1_ROLE'),
+      TIER_2_ROLE:         getVal('TIER_2_ROLE'),
+      TIER_3_ROLE:         getVal('TIER_3_ROLE'),
+      META_IMAGE:          getVal('META_IMAGE'),
+    };
+
+    try {
+      await fetch(API + '/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings)
+      });
+      showToast('✅ Настройки сохранены и применены!');
+    } catch(e) {
+      showToast('❌ Ошибка сохранения!');
+    }
+  }
+
+  // ===== ПРЕВЬЮ КАРТИНКИ =====
+  document.addEventListener('DOMContentLoaded', () => {
+    const imgInput = document.getElementById('META_IMAGE');
+    if (imgInput) {
+      imgInput.addEventListener('input', () => {
+        const url = imgInput.value.trim();
+        const preview = document.getElementById('imagePreview');
+        const img = document.getElementById('previewImg');
+        if (url.startsWith('http')) {
+          img.src = url;
+          preview.style.display = 'block';
+        } else {
+          preview.style.display = 'none';
+        }
+      });
+    }
+  });
+
+  // ===== HELPERS =====
+  function setVal(id, val) {
+    const el = document.getElementById(id);
+    if (el && val !== undefined && val !== null) el.value = val;
+  }
+
+  function getVal(id) {
+    const el = document.getElementById(id);
+    return el ? el.value.trim() : '';
+  }
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3000);
+  }
+
+  // ===== INIT =====
+  loadSettings();
+  loadPlayers();
+</script>
+</body>
+</html>

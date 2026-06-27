@@ -20,18 +20,19 @@ const fs = require("fs");
 const META_IMAGE = "Gemini_Generated_Image_vx5awhvx5awhvx5a.png"; 
  
 const CONFIG = {
-  // === Канали ===
-  COMMAND_CHANNEL_ID: "1520394576999747677",  
-  MAIN_LOG_CHANNEL: "1520394577222172679",    
-  REPORT_LOG_CHANNEL: "1520394577222172679",  
-  AFK_LOG_CHANNEL: "1520394577222172678",     
-  AFK_COMMAND_CHANNEL: "1520394577549201414", 
-  NEWS_CHANNEL_ID: "1520394577721295020",     
+  // === Каналы (актуальные ID с нового сервера) ===
+  COMMAND_CHANNEL_ID: "1520394576999747677",   // Канал "Заявка" — где стоит кнопка "Подать заявку"
+  MAIN_LOG_CHANNEL: "1520394577222172679",     // Канал "Итог" — сюда падают заявки/тиры/отчеты на проверку
+  REPORT_LOG_CHANNEL: "1520394577222172679",   // Канал "Итог" — туда же и еженедельные отчеты
+  AFK_LOG_CHANNEL: "1520394577222172679",      // Канал "Итог" — уведомления о блокировке ЛС
+  AFK_COMMAND_CHANNEL: "1520394577721295020",  // Канал команды /afk
+  NEWS_CHANNEL_ID: "1520394577549201415",      // Канал новостей — куда постится /новости
   WARN_SYSTEM_CHANNEL: "1520394577549201417", 
   WARN_WORKOFF_CHANNEL: "1520394577721295019",
   TIER_CHANNEL_ID: "1490912215341989978",
+  POINTS_CHANNEL_ID: "1520394577549201414",    // Канал баллов — где стоит /menu (заработать/баланс/повышение)
   
-  // === 🟢 НОВЫЕ РОЛИ РАНГОВ ===
+  // === 🟢 РОЛИ РАНГОВ ===
   ROLE_ACCEPTED_ID: "1520394576458682395", // 1 ранг (Выдается при принятии)
   RANK_2_ROLE_ID: "1520394576458682396",   // 2 ранг (Система повышения)
   RANK_3_ROLE_ID: "1520394576458682397",   // 3 ранг (Система повышения)
@@ -63,7 +64,7 @@ const CONFIG = {
 };
  
 const CAPT_CONFIG = {
-  CHANNEL_ID: "1480474720683032660", 
+  CHANNEL_ID: "1520394577381687344",  // Канал капта/спама — куда летят +на капт и спам-рассылка
   IMAGE_URL: META_IMAGE,
   TIERS: {
     "1": "1479566016924221510", 
@@ -189,7 +190,7 @@ async function checkConfig() {
   const channelFields = [
     "COMMAND_CHANNEL_ID", "MAIN_LOG_CHANNEL", "REPORT_LOG_CHANNEL", "AFK_LOG_CHANNEL",
     "AFK_COMMAND_CHANNEL", "NEWS_CHANNEL_ID", "WARN_SYSTEM_CHANNEL", "WARN_WORKOFF_CHANNEL",
-    "TIER_CHANNEL_ID"
+    "TIER_CHANNEL_ID", "POINTS_CHANNEL_ID"
   ];
   const roleFields = [
     "ROLE_ACCEPTED_ID", "RANK_2_ROLE_ID", "RANK_3_ROLE_ID", "VACATION_ROLE", "FINE_ROLE_1", "FINE_ROLE_2"
@@ -247,6 +248,14 @@ async function checkConfig() {
     } else {
       console.log(`✅ CAPT_CONFIG.TIERS["${tier}"] -> @${role.name}`);
     }
+  }
+
+  const captChannel = await guild.channels.fetch(CAPT_CONFIG.CHANNEL_ID).catch(() => null);
+  if (!captChannel) {
+    console.warn(`❌ CAPT_CONFIG.CHANNEL_ID = "${CAPT_CONFIG.CHANNEL_ID}" — КАНАЛ НЕ НАЙДЕН на этом сервере!`);
+    problems++;
+  } else {
+    console.log(`✅ CAPT_CONFIG.CHANNEL_ID -> #${captChannel.name}`);
   }
 
   if (problems === 0) {
@@ -772,8 +781,15 @@ client.on("interactionCreate", async i => {
     }
  
   } catch (e) {
-    console.error("Критическая ошибка:", e);
-    if (!i.replied && !i.deferred) await i.reply({ content: "❌ Что-то пошло не так при обработке действия.", ephemeral: true }).catch(() => {});
+    console.error("❌ Критическая ошибка в обработке interaction:");
+    console.error(`   Тип: ${i.isChatInputCommand() ? `команда /${i.commandName}` : i.customId || "неизвестно"}`);
+    console.error(e);
+    const errText = `❌ Что-то пошло не так: \`${e.message || e}\``;
+    if (!i.replied && !i.deferred) {
+      await i.reply({ content: errText, ephemeral: true }).catch(() => {});
+    } else if (i.deferred && !i.replied) {
+      await i.editReply({ content: errText }).catch(() => {});
+    }
   }
 });
  

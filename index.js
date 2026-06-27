@@ -17,7 +17,7 @@ const {
 const fs = require("fs");
  
 /* ================= [ НАСТРОЙКИ СЕМЬИ META ] ================= */
-const META_IMAGE = "Gemini_Generated_Image_vx5awhvx5awhvx5a.png"; 
+const META_IMAGE = "https://cdn.discordapp.com/attachments/1520394577222172675/1520427420333637862/Gemini_Generated_Image_vx5awhvx5awhvx5a.png?ex=6a4127e1&is=6a3fd661&hm=169a0e6ea041e124d9ba168a5c46e5b40c09e4612d8e61355569bc521eac4cb9&";
  
 const CONFIG = {
   // === Каналы (актуальные ID с нового сервера) ===
@@ -112,6 +112,18 @@ const getPoints = (id) => db.points[id] || 0;
  
 setInterval(() => { save(); saveAfk(); }, 5 * 60 * 1000);
  
+// === Кэш участников сервера (чтобы не тянуть полный список с Discord на каждую команду) ===
+let membersCacheTime = 0;
+const MEMBERS_CACHE_TTL = 5 * 60 * 1000; // 5 минут
+async function fetchMembersCached(guild) {
+  const now = Date.now();
+  if (now - membersCacheTime > MEMBERS_CACHE_TTL || guild.members.cache.size < 2) {
+    await guild.members.fetch().catch(() => {});
+    membersCacheTime = now;
+  }
+  return guild.members.cache;
+}
+ 
 /* ================= [ ИНИЦИАЛИЗАЦИЯ БОТА ] ================= */
 const client = new Client({
   intents: [
@@ -168,8 +180,15 @@ client.once("ready", async () => {
 
   const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
   try {
-    await rest.put(Routes.applicationCommands(client.user.id), { body: commands.map(cmd => cmd.toJSON()) });
-    console.log('✅ Слэш-команды успешно зарегистрированы.');
+    const guild = client.guilds.cache.first();
+    if (guild) {
+      // Регистрация команд по конкретному серверу — обновляется мгновенно (глобальная регистрация может идти до часа)
+      await rest.put(Routes.applicationGuildCommands(client.user.id, guild.id), { body: commands.map(cmd => cmd.toJSON()) });
+      console.log(`✅ Слэш-команды зарегистрированы для сервера ${guild.name} (мгновенно).`);
+    } else {
+      await rest.put(Routes.applicationCommands(client.user.id), { body: commands.map(cmd => cmd.toJSON()) });
+      console.log('✅ Слэш-команды зарегистрированы глобально.');
+    }
   } catch (error) {
     console.error('Ошибка регистрации команд:', error);
   }
@@ -271,6 +290,7 @@ function buildCaptEmbed() {
     .setTitle("⚔️ Война Семей Meta (Капт)")
     .setDescription("Нажмите кнопку ниже, чтобы записаться на капт.")
     .setColor("#2b2d31")
+    .setImage(CAPT_CONFIG.IMAGE_URL)
     .addFields(
       { name: `Tier 1: (${currentCapt.tier1.length})`, value: fmt(currentCapt.tier1), inline: true },
       { name: `Tier 2: (${currentCapt.tier2.length})`, value: fmt(currentCapt.tier2), inline: true },
@@ -297,17 +317,17 @@ client.on("interactionCreate", async i => {
         if (!CONFIG.ADMIN_ROLES.some(r => i.member.roles.cache.has(r))) return i.reply({ content: "❌ Нет прав.", ephemeral: true });
         await i.deferReply({ ephemeral: true });
         const text = i.options.getString('текст');
-        const embed = new EmbedBuilder().setTitle("📢 ВАЖНАЯ НОВОСТЬ META").setDescription(text).setColor("Red").setTimestamp();
+        const embed = new EmbedBuilder().setTitle("📢 ВАЖНАЯ НОВОСТЬ META").setDescription(text).setColor("Red").setImage(CONFIG.IMAGE).setTimestamp();
         
         const newsCh = await i.guild.channels.fetch(CONFIG.NEWS_CHANNEL_ID).catch(() => null);
         if (newsCh) {
             await newsCh.send({ embeds: [embed] }).catch(() => {});
         }
 
-        await i.guild.members.fetch().catch(() => {});
-        const members = i.guild.members.cache.filter(m => !m.user.bot);
+        const members = await fetchMembersCached(i.guild);
+        const targets = members.filter(m => !m.user.bot);
         let sent = 0;
-        for (const [, m] of members) {
+        for (const [, m] of targets) {
           try { await m.send({ embeds: [embed] }); sent++; } catch { notifyBlocked(i.guild, m); }
         }
         return i.editReply(`✅ Новость опубликована в канале и доставлена в ЛС: **${sent}** участников.`);
@@ -317,10 +337,10 @@ client.on("interactionCreate", async i => {
         if (!CONFIG.ADMIN_ROLES.some(r => i.member.roles.cache.has(r))) return i.reply({ content: "❌ Нет прав.", ephemeral: true });
         await i.deferReply({ ephemeral: true });
         const text = i.options.getString('текст') || "🚨 **СБОР НА КАПТ META!** Быстро заходи в игру и садись в дискорд!";
-        await i.guild.members.fetch().catch(() => {});
-        const members = i.guild.members.cache.filter(m => !m.user.bot);
+        const members = await fetchMembersCached(i.guild);
+        const targets = members.filter(m => !m.user.bot);
         let sent = 0;
-        for (const [, m] of members) {
+        for (const [, m] of targets) {
           try {
             for (let r = 0; r < 5; r++) { await m.send(text); await new Promise(res => setTimeout(res, 300)); }
             sent++;
@@ -330,7 +350,7 @@ client.on("interactionCreate", async i => {
       }
  
       if (cmd === 'тир') {
-        const embed = new EmbedBuilder().setTitle("🎯 ПОЛУЧЕНИЕ ТИРА (META)").setDescription("Нажмите кнопку ниже, чтобы подать заявку на проверку стрельбы.").setColor("#8A2BE2");
+        const embed = new EmbedBuilder().setTitle("🎯 ПОЛУЧЕНИЕ ТИРА (META)").setDescription("Нажмите кнопку ниже, чтобы подать заявку на проверку стрельбы.").setImage(CONFIG.TIER_IMAGE).setColor("#8A2BE2");
         const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("TIERBTN").setLabel("Получить тир").setStyle(ButtonStyle.Primary));
         await i.channel.send({ embeds: [embed], components: [row] });
         return i.reply({ content: "✅ Панель отправлена.", ephemeral: true });
@@ -345,7 +365,7 @@ client.on("interactionCreate", async i => {
       }
  
       if (cmd === 'menu') {
-        const embed = new EmbedBuilder().setTitle("💎 СИСТЕМА БАЛЛОВ И ПОВЫШЕНИЯ META").setDescription(`📜 **Цены повышения:**\n🔹 1 ➔ 2 ранг: **${RANK_COSTS["2"]} 💎**\n🔹 2 ➔ 3 ранг: **${RANK_COSTS["3"]} 💎**`).setColor("#00d4ff");
+        const embed = new EmbedBuilder().setTitle("💎 СИСТЕМА БАЛЛОВ И ПОВЫШЕНИЯ META").setDescription(`📜 **Цены повышения:**\n🔹 1 ➔ 2 ранг: **${RANK_COSTS["2"]} 💎**\n🔹 2 ➔ 3 ранг: **${RANK_COSTS["3"]} 💎**`).setImage(CONFIG.IMAGE).setColor("#00d4ff");
         const row = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId("earn_btn").setLabel("Заработать баллы").setStyle(ButtonStyle.Primary),
           new ButtonBuilder().setCustomId("balance_btn").setLabel("Мой Баланс").setStyle(ButtonStyle.Secondary),
@@ -356,14 +376,25 @@ client.on("interactionCreate", async i => {
       }
  
       if (cmd === 'заявка') {
-        const embed = new EmbedBuilder().setTitle("📝 ЗАЯВКА В СЕМЬЮ META").setDescription("Нажми на кнопку ниже, чтобы заполнить анкету на вступление.").setColor("#ff0000");
+        const embed = new EmbedBuilder()
+          .setTitle("📝 ЗАЯВКА В СЕМЬЮ META")
+          .setDescription(
+            "Хочешь попасть в нашу семью? Ознакомься с условиями ниже и нажми кнопку **«Подать заявку»**.\n\n" +
+            "**📌 Требования для вступления:**\n" +
+            "🔹 Уверенный откат на арене\n" +
+            "🔹 Знание спешиал и карабина (спешик / карбы)\n" +
+            "🔹 Адекватность и нормальное поведение в команде\n\n" +
+            "Заполни анкету честно — это сильно влияет на решение о принятии."
+          )
+          .setImage(CONFIG.IMAGE)
+          .setColor("#ff0000");
         const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("apply_start").setLabel("Подать заявку").setStyle(ButtonStyle.Danger));
         await i.channel.send({ embeds: [embed], components: [row] });
         return i.reply({ content: "✅ Панель заявок создана.", ephemeral: true });
       }
  
       if (cmd === 'afk') {
-        const embed = new EmbedBuilder().setTitle("💤 УПРАВЛЕНИЕ AFK / ОТПУСКАМИ").setDescription("🏖 **Отпуск** — Подать заявку на отпуск.\n🌙 **Уйти в AFK** — Бот снимет роли до возвращения.\n✅ **Выйти из AFK** — Вернуть роли обратно.").setColor("#2f3136");
+        const embed = new EmbedBuilder().setTitle("💤 УПРАВЛЕНИЕ AFK / ОТПУСКАМИ").setDescription("🏖 **Отпуск** — Подать заявку на отпуск.\n🌙 **Уйти в AFK** — Бот снимет роли до возвращения.\n✅ **Выйти из AFK** — Вернуть роли обратно.").setImage(CONFIG.IMAGE).setColor("#2f3136");
         const row = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId("afk_vacation").setLabel("🏖 В отпуск").setStyle(ButtonStyle.Primary),
           new ButtonBuilder().setCustomId("afk_on").setLabel("🌙 Включить AFK").setStyle(ButtonStyle.Secondary),
@@ -391,15 +422,15 @@ client.on("interactionCreate", async i => {
         if (!CONFIG.ADMIN_ROLES.some(r => i.member.roles.cache.has(r))) return i.reply({ content: "❌ Нет прав.", ephemeral: true });
         await i.deferReply({ ephemeral: true });
         const time = i.options.getString('time') || "ближайшее время";
-        await i.guild.members.fetch().catch(() => {});
-        const members = i.guild.members.cache.filter(m => !m.user.bot);
-        const embed = new EmbedBuilder().setTitle("⚔️ СБОР НА КАПТ META!").setDescription(`Сбор объявлен! Будьте в игре через: **${time}**!`).setColor("Red");
+        const cachedMembers = await fetchMembersCached(i.guild);
+        const members = cachedMembers.filter(m => !m.user.bot);
+        const embed = new EmbedBuilder().setTitle("⚔️ СБОР НА КАПТ META!").setDescription(`Сбор объявлен! Будьте в игре через: **${time}**!`).setImage(CAPT_CONFIG.IMAGE_URL).setColor("Red");
         members.forEach(async m => { try { await m.send({ embeds: [embed] }); } catch {} });
         return i.editReply(`✅ Рассылка запущена для ${members.size} участников.`);
       }
  
       if (cmd === 'отчеты') {
-        const embed = new EmbedBuilder().setTitle("📋 ЕЖЕНЕДЕЛЬНЫЙ ОТЧЁТ СЕМЬИ META").setDescription("Нажмите кнопку ниже для отправки вашего отчета старшему составу.").setColor("#5865F2");
+        const embed = new EmbedBuilder().setTitle("📋 ЕЖЕНЕДЕЛЬНЫЙ ОТЧЁТ СЕМЬИ META").setDescription("Нажмите кнопку ниже для отправки вашего отчета старшему составу.").setImage(CONFIG.IMAGE).setColor("#5865F2");
         const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("WREPORTBTN").setLabel("📋 Отправить отчёт").setStyle(ButtonStyle.Primary));
         await i.channel.send({ embeds: [embed], components: [row] });
         return i.reply({ content: "✅ Панель отчётов готова.", ephemeral: true });
@@ -723,9 +754,11 @@ client.on("interactionCreate", async i => {
     if (i.isButton() && i.customId === "apply_start") {
       const modal = new ModalBuilder().setCustomId("applyM").setTitle("Анкета в Meta Famq");
       modal.addComponents(
-        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("a1").setLabel("Ник, Возраст, Статик").setStyle(TextInputStyle.Short)),
-        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("a2").setLabel("Ссылка на откат стрельбы").setStyle(TextInputStyle.Paragraph)),
-        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("a3").setLabel("Ваш средний онлайн в день").setStyle(TextInputStyle.Short))
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("a1").setLabel("Имя в жизни и возраст").setStyle(TextInputStyle.Short).setRequired(true)),
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("a2").setLabel("Ваш ник в игре").setStyle(TextInputStyle.Short).setRequired(true)),
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("a3").setLabel("Почему выбрали именно нашу семью?").setStyle(TextInputStyle.Paragraph).setRequired(true)),
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("a4").setLabel("Почему ушли с предыдущей семьи?").setStyle(TextInputStyle.Paragraph).setRequired(true)),
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("a5").setLabel("Баны за читы? Ссылки: спешик/тяга/сайга").setStyle(TextInputStyle.Paragraph).setRequired(true))
       );
       return i.showModal(modal);
     }
@@ -738,11 +771,15 @@ client.on("interactionCreate", async i => {
       const uid = i.user.id;
 
       const emb = new EmbedBuilder().setTitle("📩 НОВАЯ ЗАЯВКА В META").setColor("Red")
+        .setThumbnail(i.user.displayAvatarURL())
+        .setImage(CONFIG.IMAGE)
         .addFields(
           { name: "👤 Игрок", value: `${i.user}` },
-          { name: "📝 Данные", value: i.fields.getTextInputValue("a1") },
-          { name: "🎬 Стрельба", value: i.fields.getTextInputValue("a2") },
-          { name: "🕒 Онлайн", value: i.fields.getTextInputValue("a3") },
+          { name: "📝 Имя и возраст", value: i.fields.getTextInputValue("a1") },
+          { name: "🎮 Ник в игре", value: i.fields.getTextInputValue("a2") },
+          { name: "❓ Почему выбрали нашу семью", value: i.fields.getTextInputValue("a3") },
+          { name: "↩️ Почему ушли с предыдущей семьи", value: i.fields.getTextInputValue("a4") },
+          { name: "⚠️ Баны/читы и откаты (спешик/тяга/сайга)", value: i.fields.getTextInputValue("a5") },
           { name: "📊 Статус", value: "⏳ Ожидание" }
         ).setTimestamp();
       
@@ -753,11 +790,19 @@ client.on("interactionCreate", async i => {
         new ButtonBuilder().setCustomId(`ADMNO.${uid}`).setLabel("❌ Отказать").setStyle(ButtonStyle.Danger)
       );
       
-      await log.send({ 
-        content: `Заявка от <@${uid}>`,
-        embeds: [emb], 
-        components: [row] 
-      });
+      try {
+        await log.send({ 
+          content: `Заявка от <@${uid}>`,
+          embeds: [emb], 
+          components: [row] 
+        });
+      } catch (sendErr) {
+        console.error("❌ Не удалось отправить заявку в MAIN_LOG_CHANNEL:", sendErr);
+        return i.reply({ 
+          content: `❌ Бот не может отправить заявку в канал «итог». Проверьте права бота в этом канале (Отправка сообщений / Встраивание ссылок). Техническая причина: \`${sendErr.message}\``, 
+          ephemeral: true 
+        });
+      }
       
       return i.reply({ content: "✅ Ваша анкета успешно отправлена на рассмотрение!", ephemeral: true });
     }

@@ -64,6 +64,17 @@ let CONFIG = {
   ]
 };
 
+/* Отдельный список ролей, которым нужно ВИДЕТЬ ВСЕ личные ветки отчётов
+   (созданные через /ветка), включая те, которые создал не он.
+   Список независим от CONFIG.ADMIN_ROLES — править можно отдельно. */
+const THREAD_ACCESS_ROLES = [
+  "1520394576467198069",
+  "1520394576467198072",
+  "1520394576467198073",
+  "1520394576467198068",
+  "1520394576467198066"
+];
+
 let CAPT_CONFIG = {
   CHANNEL_ID: "1520394577381687344",
   IMAGE_URL:  META_IMAGE,
@@ -268,7 +279,12 @@ const closeInterviewChannels = async (guild, userId) => {
    Вынесено в отдельную функцию, чтобы её можно было вызвать
    как из текстовой команды "\ветка", так и из слэш-команды "/ветка".
    Делает fallback на обычную публичную ветку, если приватную
-   создать не получилось (нет прав / сервер не Community). */
+   создать не получилось (нет прав / сервер не Community).
+
+   ВАЖНО: в ветку добавляются не только targetMember и invokerUser,
+   а ВСЕ участники сервера, у которых есть хотя бы одна роль
+   из THREAD_ACCESS_ROLES — чтобы любой админ из этого списка видел
+   ЛЮБУЮ личную ветку, даже созданную не им. */
 async function createReportThread(guild, parentChannel, targetMember, invokerUser) {
   let thread = null;
   let isPrivate = true;
@@ -296,8 +312,27 @@ async function createReportThread(guild, parentChannel, targetMember, invokerUse
     }
   }
 
+  // Игрок, для которого создаётся ветка
   await thread.members.add(targetMember.id).catch(() => {});
+  // Тот, кто вызвал команду (на случай если у него вдруг нет ролей из THREAD_ACCESS_ROLES)
   await thread.members.add(invokerUser.id).catch(() => {});
+
+  // Добавляем ВСЕХ участников сервера с ролями из THREAD_ACCESS_ROLES,
+  // чтобы они видели эту ветку, даже если не они её создавали.
+  let addedAdmins = 0;
+  try {
+    const allMembers = await fetchMembersCached(guild);
+    const adminMembers = allMembers.filter(m =>
+      !m.user.bot && THREAD_ACCESS_ROLES.some(roleId => m.roles.cache.has(roleId))
+    );
+    for (const [, adminMember] of adminMembers) {
+      if (adminMember.id === targetMember.id || adminMember.id === invokerUser.id) continue;
+      const added = await thread.members.add(adminMember.id).catch(() => null);
+      if (added !== null) addedAdmins++;
+    }
+  } catch (e) {
+    console.error("⚠️ Не удалось добавить всех админов в ветку:", e.message);
+  }
 
   await thread.send({
     content: `👋 Привет, ${targetMember}! Это твоя личная ветка для предоставления отчетов.\n\n` +
@@ -308,11 +343,11 @@ async function createReportThread(guild, parentChannel, targetMember, invokerUse
              `🔹 РП семьи\n` +
              `🔹 Откаты с каптов\n\n` +
              (isPrivate
-               ? `🔒 *Данная ветка полностью приватна. Её видишь только ты и руководство семьи.*`
+               ? `🔒 *Данная ветка приватна — её видят только ты и руководство семьи.*`
                : `ℹ️ *Эта ветка видна всем в канале (приватные ветки недоступны на этом сервере — проверьте, что сервер переведён в режим Community, и боту выданы права "Управление ветками").*`)
   });
 
-  return { thread, isPrivate, error: null };
+  return { thread, isPrivate, addedAdmins, error: null };
 }
 
 /* ================= [ СЛЭШ-КОМАНДЫ ] ================= */
@@ -544,7 +579,7 @@ client.on("interactionCreate", async i => {
           return i.editReply("❌ Этот участник не найден на сервере.");
         }
 
-        const { thread, isPrivate, error } = await createReportThread(i.guild, i.channel, targetMember, i.user);
+        const { thread, isPrivate, addedAdmins, error } = await createReportThread(i.guild, i.channel, targetMember, i.user);
 
         if (!thread) {
           return i.editReply(
@@ -556,7 +591,8 @@ client.on("interactionCreate", async i => {
         }
 
         return i.editReply(
-          `✅ Создана ${isPrivate ? "приватная" : "публичная (fallback)"} ветка: <#${thread.id}>`
+          `✅ Создана ${isPrivate ? "приватная" : "публичная (fallback)"} ветка: <#${thread.id}>\n` +
+          `👥 В неё добавлено руководство: **${addedAdmins}** чел. (роли из списка доступа к веткам)`
         );
       }
 

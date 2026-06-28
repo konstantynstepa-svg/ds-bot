@@ -264,6 +264,57 @@ const closeInterviewChannels = async (guild, userId) => {
   }
 };
 
+/* ================= [ СОЗДАНИЕ ЛИЧНОЙ ВЕТКИ ДЛЯ ОТЧЁТОВ ] =================
+   Вынесено в отдельную функцию, чтобы её можно было вызвать
+   как из текстовой команды "\ветка", так и из слэш-команды "/ветка".
+   Делает fallback на обычную публичную ветку, если приватную
+   создать не получилось (нет прав / сервер не Community). */
+async function createReportThread(guild, parentChannel, targetMember, invokerUser) {
+  let thread = null;
+  let isPrivate = true;
+
+  try {
+    thread = await parentChannel.threads.create({
+      name: `Личная ветка - ${targetMember.user.username}`,
+      type: ChannelType.GuildPrivateThread,
+      autoArchiveDuration: 1440,
+      reason: 'Личная ветка для отчетов'
+    });
+  } catch (e) {
+    console.warn("⚠️ Не удалось создать приватную ветку, пробую публичную:", e.message);
+    isPrivate = false;
+    try {
+      thread = await parentChannel.threads.create({
+        name: `Личная ветка - ${targetMember.user.username}`,
+        type: ChannelType.PublicThread,
+        autoArchiveDuration: 1440,
+        reason: 'Личная ветка для отчетов (fallback, без приватных веток)'
+      });
+    } catch (e2) {
+      console.error("❌ Не удалось создать ветку вообще:", e2.message);
+      return { thread: null, error: e2.message };
+    }
+  }
+
+  await thread.members.add(targetMember.id).catch(() => {});
+  await thread.members.add(invokerUser.id).catch(() => {});
+
+  await thread.send({
+    content: `👋 Привет, ${targetMember}! Это твоя личная ветка для предоставления отчетов.\n\n` +
+             `**Тебе необходимо отправить сюда следующие материалы:**\n` +
+             `🔹 Скрин ГГ\n` +
+             `🔹 Скрин МЦЛ\n` +
+             `🔹 ВЗМ / Капт\n` +
+             `🔹 РП семьи\n` +
+             `🔹 Откаты с каптов\n\n` +
+             (isPrivate
+               ? `🔒 *Данная ветка полностью приватна. Её видишь только ты и руководство семьи.*`
+               : `ℹ️ *Эта ветка видна всем в канале (приватные ветки недоступны на этом сервере — проверьте, что сервер переведён в режим Community, и боту выданы права "Управление ветками").*`)
+  });
+
+  return { thread, isPrivate, error: null };
+}
+
 /* ================= [ СЛЭШ-КОМАНДЫ ] ================= */
 const commands = [
   new SlashCommandBuilder().setName('новости').setDescription('Разослать новость семье Meta').addStringOption(opt => opt.setName('текст').setDescription('Текст новости').setRequired(true)),
@@ -279,6 +330,17 @@ const commands = [
   new SlashCommandBuilder().setName('отчеты').setDescription('Панель еженедельного отчёта'),
   new SlashCommandBuilder().setName('повышение').setDescription('Панель повышения ранга'),
   new SlashCommandBuilder().setName('оповещение').setDescription('Отправить важное сообщение с галочкой о прочтении').addStringOption(opt => opt.setName('текст').setDescription('Текст').setRequired(true)),
+
+  // ====== НОВЫЕ КОМАНДЫ (раньше работали только как текстовые \прочитал и \ветка) ======
+  new SlashCommandBuilder()
+    .setName('прочитал')
+    .setDescription('Отправить оповещение с кнопкой "Я прочитал"')
+    .addStringOption(opt => opt.setName('текст').setDescription('Текст оповещения').setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName('ветка')
+    .setDescription('Создать личную ветку для отчётов с участником')
+    .addUserOption(opt => opt.setName('user').setDescription('Участник, с которым создать ветку').setRequired(true)),
 ];
 
 /* ================= [ ЗАПУСК ] ================= */
@@ -360,57 +422,43 @@ client.on("messageCreate", async message => {
 
   // ОБРАБОТКА КОМАНДЫ \прочитал
   if (message.content.startsWith("\\прочитал ")) {
-    if (!CONFIG.ADMIN_ROLES.some(r => message.member.roles.cache.has(r))) return;
+    if (!message.member || !CONFIG.ADMIN_ROLES.some(r => message.member.roles.cache.has(r))) return;
     const text = message.content.slice(10).trim();
+    if (!text) {
+      const reply = await message.reply("❌ Укажите текст оповещения после команды.");
+      setTimeout(() => reply.delete().catch(() => {}), 5000);
+      return;
+    }
     await message.delete().catch(() => {});
-    
+
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId("READ_BTN").setLabel("✅ Я прочитал").setStyle(ButtonStyle.Success)
     );
-    
+
     await message.channel.send({ content: `📢 **ВНИМАНИЕ!**\n\n${text}\n\n*Ребята, кто прочитал — ставьте галку ниже!*`, components: [row] });
+    return;
   }
 
   // ОБРАБОТКА КОМАНДЫ \ветка ID
   if (message.content.startsWith("\\ветка ")) {
-    if (!CONFIG.ADMIN_ROLES.some(r => message.member.roles.cache.has(r))) return;
+    if (!message.member || !CONFIG.ADMIN_ROLES.some(r => message.member.roles.cache.has(r))) return;
     const targetId = message.content.slice(7).trim();
     const targetMember = await message.guild.members.fetch(targetId).catch(() => null);
-    
+
     if (!targetMember) {
       const reply = await message.reply("❌ Участник с таким ID не найден на сервере.");
       setTimeout(() => reply.delete().catch(() => {}), 5000);
       return;
     }
-    
+
     await message.delete().catch(() => {});
-    
-    // Создаем приватную ветку (доступную только админам и тем, кого добавили)
-    const thread = await message.channel.threads.create({
-      name: `Личная ветка - ${targetMember.user.username}`,
-      type: ChannelType.GuildPrivateThread,
-      autoArchiveDuration: 1440,
-      reason: 'Личная ветка для отчетов'
-    }).catch(() => null);
-    
+
+    const { thread, error } = await createReportThread(message.guild, message.channel, targetMember, message.author);
+
     if (!thread) {
-      return message.channel.send("❌ Не удалось создать приватную ветку. Проверьте права бота на управление ветками.");
+      await message.channel.send(`❌ Не удалось создать ветку. Проверьте права бота на управление ветками (Manage Threads / Create Private Threads).\n\`${error || ''}\``);
     }
-    
-    // Добавляем игрока и автора команды в приватную ветку
-    await thread.members.add(targetId).catch(() => {});
-    await thread.members.add(message.author.id).catch(() => {});
-    
-    await thread.send({
-      content: `👋 Привет, ${targetMember}! Это твоя личная ветка для предоставления отчетов.\n\n` +
-               `**Тебе необходимо отправить сюда следующие материалы:**\n` +
-               `🔹 Скрин ГГ\n` +
-               `🔹 Скрин МЦЛ\n` +
-               `🔹 ВЗМ / Капт\n` +
-               `🔹 РП семьи\n` +
-               `🔹 Откаты с каптов\n\n` +
-               `🔒 *Данная ветка полностью приватна. Её видишь только ты и руководство семьи.*`
-    });
+    return;
   }
 });
 
@@ -453,37 +501,63 @@ client.on("interactionCreate", async i => {
         }
         return i.editReply(`✅ Новость опубликована. Доставлено: **${sent}** участников.`);
       }
-      
+
       // /оповещение
       if (cmd === 'оповещение') {
         if (!CONFIG.ADMIN_ROLES.some(r => i.member.roles.cache.has(r)))
           return i.reply({ content: "❌ Нет прав.", ephemeral: true });
-        
+
         const text = i.options.getString('текст');
         const row = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId("READ_BTN").setLabel("✅ Я прочитал").setStyle(ButtonStyle.Success)
         );
-        
+
         await i.channel.send({ content: `📢 **ВНИМАНИЕ!**\n\n${text}\n\n*Ребята, кто прочитал — ставьте галку ниже!*`, components: [row] });
         return i.reply({ content: "✅ Оповещение отправлено.", ephemeral: true });
       }
 
-      // /спам
-      if (cmd === 'спам') {
+      // /прочитал — НОВАЯ слэш-команда (замена/дополнение текстовой "\прочитал")
+      if (cmd === 'прочитал') {
         if (!CONFIG.ADMIN_ROLES.some(r => i.member.roles.cache.has(r)))
           return i.reply({ content: "❌ Нет прав.", ephemeral: true });
+
+        const text = i.options.getString('текст');
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId("READ_BTN").setLabel("✅ Я прочитал").setStyle(ButtonStyle.Success)
+        );
+
+        await i.channel.send({ content: `📢 **ВНИМАНИЕ!**\n\n${text}\n\n*Ребята, кто прочитал — ставьте галку ниже!*`, components: [row] });
+        return i.reply({ content: "✅ Оповещение с галочкой прочтения отправлено.", ephemeral: true });
+      }
+
+      // /ветка — НОВАЯ слэш-команда (замена/дополнение текстовой "\ветка ID")
+      if (cmd === 'ветка') {
+        if (!CONFIG.ADMIN_ROLES.some(r => i.member.roles.cache.has(r)))
+          return i.reply({ content: "❌ Нет прав.", ephemeral: true });
+
         await i.deferReply({ ephemeral: true });
-        const text = i.options.getString('текст') || "🚨 **СБОР НА КАПТ META!** Быстро заходи в игру!";
-        const members = await fetchMembersCached(i.guild);
-        const targets = members.filter(m => !m.user.bot);
-        let sent = 0;
-        for (const [, m] of targets) {
-          try {
-            for (let r = 0; r < 5; r++) { await m.send(text); await new Promise(res => setTimeout(res, 300)); }
-            sent++;
-          } catch { notifyBlocked(i.guild, m); }
+
+        const targetUser = i.options.getUser('user');
+        const targetMember = await i.guild.members.fetch(targetUser.id).catch(() => null);
+
+        if (!targetMember) {
+          return i.editReply("❌ Этот участник не найден на сервере.");
         }
-        return i.editReply(`✅ Спам-оповещение отправлено **${sent}** людям.`);
+
+        const { thread, isPrivate, error } = await createReportThread(i.guild, i.channel, targetMember, i.user);
+
+        if (!thread) {
+          return i.editReply(
+            `❌ Не удалось создать ветку.\n` +
+            `Проверьте, что у бота есть права **"Управлять ветками"** и **"Создавать приватные ветки"**, ` +
+            `и что сервер переведён в режим Community (нужен для приватных веток).\n` +
+            `\`Ошибка: ${error || 'неизвестная ошибка'}\``
+          );
+        }
+
+        return i.editReply(
+          `✅ Создана ${isPrivate ? "приватная" : "публичная (fallback)"} ветка: <#${thread.id}>`
+        );
       }
 
       // /тир
@@ -666,17 +740,17 @@ client.on("interactionCreate", async i => {
         return i.reply({ content: "❌ Ты не можешь сделать это действие.", ephemeral: true });
       }
     }
-    
+
     /* ===== ГАЛОЧКА О ПРОЧТЕНИИ ===== */
     if (i.isButton() && i.customId === "READ_BTN") {
       const msg = i.message;
       let content = msg.content;
       const readMarker = "\n\n**Прочитали:**";
-      
+
       if (!content.includes(readMarker)) {
         content += readMarker;
       }
-      
+
       if (!content.includes(`<@${i.user.id}>`)) {
          content += `\n- <@${i.user.id}>`;
          await msg.edit({ content });
@@ -1085,7 +1159,7 @@ client.on("interactionCreate", async i => {
         await target.roles.remove(Object.values(CAPT_CONFIG.TIERS)).catch(() => {});
         const role = CAPT_CONFIG.TIERS[tierNum];
         if (role) await target.roles.add(role).catch(() => {});
-        
+
         // Фиксируем время изменения тира для кулдауна (11 часов)
         if (!db.tierCooldowns) db.tierCooldowns = {};
         db.tierCooldowns[uid] = Date.now();
@@ -1111,7 +1185,7 @@ client.on("interactionCreate", async i => {
         await target.roles.add("1520503870420287578").catch(() => {});
         target.send("🎉 Поздравляем! Вы приняты в семью **Meta**! Вам выдан 1 ранг и обязательная роль.").catch(() => {});
       }
-      
+
       const plainLogChannel = await i.guild.channels.fetch("1520495201464881214").catch(() => null);
       if (plainLogChannel) {
         await plainLogChannel.send(`Администратор ${i.user} принял игрока <@${uid}>.`);
@@ -1130,7 +1204,7 @@ client.on("interactionCreate", async i => {
     // ВЫЗОВ НА ОБЗВОН (ОТКРЫВАЕТ МЕНЮ ВЫБОРА КАНАЛОВ)
     if (i.isButton() && i.customId.startsWith("ADMCALL.")) {
       const uid = i.customId.split(".")[1];
-      
+
       const menu = new StringSelectMenuBuilder()
         .setCustomId(`CALL_CHAN_SEL.${uid}.${i.message.id}`)
         .setPlaceholder("Выберите канал для приглашения рекрута")
@@ -1347,15 +1421,15 @@ client.on("interactionCreate", async i => {
     /* ===== AFK ИСПРАВЛЕННАЯ СИСТЕМА ===== */
     if (i.isButton() && i.customId === "afk_on") {
       const botHighestRole = i.guild.members.me.roles.highest;
-      
+
       // Фильтруем роли: убираем @everyone, управляемые интеграциями (бусты, боты) и те, что выше бота
-      const rolesToRemove = i.member.roles.cache.filter(r => 
-        r.id !== i.guild.id && 
-        !r.managed && 
+      const rolesToRemove = i.member.roles.cache.filter(r =>
+        r.id !== i.guild.id &&
+        !r.managed &&
         r.position < botHighestRole.position
       ).map(r => r.id);
 
-      afkdb.roles[i.user.id] = rolesToRemove; 
+      afkdb.roles[i.user.id] = rolesToRemove;
       saveAfk();
 
       if (rolesToRemove.length > 0) {
@@ -1370,12 +1444,12 @@ client.on("interactionCreate", async i => {
       if (!saved || !Array.isArray(saved)) {
         return i.reply({ content: "❌ Вы не находились в AFK статусе или ваши роли не были корректно сохранены.", ephemeral: true });
       }
-      
+
       // Возвращаем все сохраненные роли сразу
       await i.member.roles.add(saved).catch(() => {});
       await i.member.roles.remove(CONFIG.VACATION_ROLE).catch(() => {});
-      
-      delete afkdb.roles[i.user.id]; 
+
+      delete afkdb.roles[i.user.id];
       saveAfk();
       return i.reply({ content: "✅ С возвращением! Все ваши роли успешно возвращены.", ephemeral: true });
     }

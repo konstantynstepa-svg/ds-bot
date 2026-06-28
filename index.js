@@ -12,14 +12,14 @@ const {
   StringSelectMenuOptionBuilder,
   REST,
   Routes,
-  SlashCommandBuilder
+  SlashCommandBuilder,
+  ChannelType
 } = require("discord.js");
 const fs = require("fs");
 const express = require("express");
 const bodyParser = require("body-parser");
 
 /* ================= [ НАСТРОЙКИ СЕМЬИ META ] ================= */
-// Теперь это let, чтобы мы могли менять их через сайт
 let META_IMAGE = "https://cdn.discordapp.com/attachments/1520394577222172675/1520427420333637862/Gemini_Generated_Image_vx5awhvx5awhvx5a.png?ex=6a4127e1&is=6a3fd661&hm=169a0e6ea041e124d9ba168a5c46e5b40c09e4612d8e61355569bc521eac4cb9&";
 
 let CONFIG = {
@@ -78,7 +78,6 @@ let CAPT_CONFIG = {
 /* ================= [ ЗАГРУЗКА И СОХРАНЕНИЕ НАСТРОЕК С ВЕБ-САЙТА ] ================= */
 const SERVER_CONFIG_FILE = "server_settings.json";
 
-// Загружаем настройки из файла, если он есть
 if (fs.existsSync(SERVER_CONFIG_FILE)) {
   try {
     const savedSettings = JSON.parse(fs.readFileSync(SERVER_CONFIG_FILE, "utf8"));
@@ -89,7 +88,6 @@ if (fs.existsSync(SERVER_CONFIG_FILE)) {
   }
 }
 
-// Функция для сохранения настроек
 const saveWebConfig = () => {
   try {
     fs.writeFileSync(SERVER_CONFIG_FILE, JSON.stringify({ CONFIG, CAPT_CONFIG }, null, 2), "utf8");
@@ -107,7 +105,7 @@ const TIER_INFO = {
     requirements: [
       "✅ Откат спешик + сайга",
       "✅ КД минимум 0.9",
-      "✅ Минимум 6 человек на арене",
+      "✅ Miniмум 6 человек на арене",
       "✅ Выйти хотя бы в 0.9 КД"
     ],
     description:
@@ -201,9 +199,9 @@ const EARN_OPTIONS = [
 ];
 
 /* ================= [ БАЗА ДАННЫХ ] ================= */
-let db = { points: {}, accepts: {} };
+let db = { points: {}, accepts: {}, tierCooldowns: {} };
 if (fs.existsSync("db.json")) {
-  try { db = Object.assign({ points: {}, accepts: {} }, JSON.parse(fs.readFileSync("db.json", "utf8"))); }
+  try { db = Object.assign({ points: {}, accepts: {}, tierCooldowns: {} }, JSON.parse(fs.readFileSync("db.json", "utf8"))); }
   catch(e) { console.error("Ошибка чтения db.json:", e); }
 }
 
@@ -356,6 +354,66 @@ function buildCaptEmbed() {
     );
 }
 
+/* ================= [ ТЕКСТОВЫЕ КОМАНДЫ (MESSAGE CREATE) ] ================= */
+client.on("messageCreate", async message => {
+  if (message.author.bot || !message.guild) return;
+
+  // ОБРАБОТКА КОМАНДЫ \прочитал
+  if (message.content.startsWith("\\прочитал ")) {
+    if (!CONFIG.ADMIN_ROLES.some(r => message.member.roles.cache.has(r))) return;
+    const text = message.content.slice(10).trim();
+    await message.delete().catch(() => {});
+    
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("READ_BTN").setLabel("✅ Я прочитал").setStyle(ButtonStyle.Success)
+    );
+    
+    await message.channel.send({ content: `📢 **ВНИМАНИЕ!**\n\n${text}\n\n*Ребята, кто прочитал — ставьте галку ниже!*`, components: [row] });
+  }
+
+  // ОБРАБОТКА КОМАНДЫ \ветка ID
+  if (message.content.startsWith("\\ветка ")) {
+    if (!CONFIG.ADMIN_ROLES.some(r => message.member.roles.cache.has(r))) return;
+    const targetId = message.content.slice(7).trim();
+    const targetMember = await message.guild.members.fetch(targetId).catch(() => null);
+    
+    if (!targetMember) {
+      const reply = await message.reply("❌ Участник с таким ID не найден на сервере.");
+      setTimeout(() => reply.delete().catch(() => {}), 5000);
+      return;
+    }
+    
+    await message.delete().catch(() => {});
+    
+    // Создаем приватную ветку (доступную только админам и тем, кого добавили)
+    const thread = await message.channel.threads.create({
+      name: `Личная ветка - ${targetMember.user.username}`,
+      type: ChannelType.GuildPrivateThread,
+      autoArchiveDuration: 1440,
+      reason: 'Личная ветка для отчетов'
+    }).catch(() => null);
+    
+    if (!thread) {
+      return message.channel.send("❌ Не удалось создать приватную ветку. Проверьте права бота на управление ветками.");
+    }
+    
+    // Добавляем игрока и автора команды в приватную ветку
+    await thread.members.add(targetId).catch(() => {});
+    await thread.members.add(message.author.id).catch(() => {});
+    
+    await thread.send({
+      content: `👋 Привет, ${targetMember}! Это твоя личная ветка для предоставления отчетов.\n\n` +
+               `**Тебе необходимо отправить сюда следующие материалы:**\n` +
+               `🔹 Скрин ГГ\n` +
+               `🔹 Скрин МЦЛ\n` +
+               `🔹 ВЗМ / Капт\n` +
+               `🔹 РП семьи\n` +
+               `🔹 Откаты с каптов\n\n` +
+               `🔒 *Данная ветка полностью приватна. Её видишь только ты и руководство семьи.*`
+    });
+  }
+});
+
 /* ================= [ ОБРАБОТКА ВЗАИМОДЕЙСТВИЙ ] ================= */
 client.on("interactionCreate", async i => {
   try {
@@ -374,7 +432,7 @@ client.on("interactionCreate", async i => {
         return i.reply({ content: `✅ Удалено сообщений: ${n}.`, ephemeral: true });
       }
 
-      // /новости — БЕЗ картинки в эмбеде
+      // /новости
       if (cmd === 'новости') {
         if (!CONFIG.ADMIN_ROLES.some(r => i.member.roles.cache.has(r)))
           return i.reply({ content: "❌ Нет прав.", ephemeral: true });
@@ -462,7 +520,6 @@ client.on("interactionCreate", async i => {
 
       // /menu
       if (cmd === 'menu') {
-        const pts = 0;
         const embed = new EmbedBuilder()
           .setTitle("🪙 СИСТЕМА МЕТА КОИНОВ")
           .setDescription(
@@ -610,9 +667,7 @@ client.on("interactionCreate", async i => {
       }
     }
     
-    /* ===================================================================
-       ===== ГАЛОЧКА О ПРОЧТЕНИИ =====
-    =================================================================== */
+    /* ===== ГАЛОЧКА О ПРОЧТЕНИИ ===== */
     if (i.isButton() && i.customId === "READ_BTN") {
       const msg = i.message;
       let content = msg.content;
@@ -631,9 +686,7 @@ client.on("interactionCreate", async i => {
       }
     }
 
-    /* ===================================================================
-       ===== СИСТЕМА ТИРОВ — ОЗНАКОМЛЕНИЕ + ПОДАЧА ЗАЯВКИ =====
-    =================================================================== */
+    /* ===== СИСТЕМА ТИРОВ — ОЗНАКОМЛЕНИЕ + ПОДАЧА ЗАЯВКИ С ПРОВЕРКОЙ СТУПЕНЕЙ И КУЛДАУНА ===== */
     if (i.isButton() && i.customId.startsWith("TIER_INFO.")) {
       const n = i.customId.split(".")[1];
       const info = TIER_INFO[n];
@@ -656,6 +709,35 @@ client.on("interactionCreate", async i => {
       const n = i.customId.split(".")[1];
       const info = TIER_INFO[n];
       if (!info) return i.reply({ content: "❌ Тир не найден.", ephemeral: true });
+
+      // Проверка ступеней по наличию ролей
+      const hasTier3 = i.member.roles.cache.has(CAPT_CONFIG.TIERS["3"]);
+      const hasTier2 = i.member.roles.cache.has(CAPT_CONFIG.TIERS["2"]);
+      const hasTier1 = i.member.roles.cache.has(CAPT_CONFIG.TIERS["1"]);
+
+      if (n === "2" && !hasTier3) {
+        return i.reply({ content: "❌ Вы не можете повыситься на Tier 2, не имея Tier 3! Повышение идет строго по ступеням.", ephemeral: true });
+      }
+      if (n === "1" && !hasTier2) {
+        return i.reply({ content: "❌ Вы не можете повыситься на Tier 1, не имея Tier 2! Повышение идет строго по ступеням.", ephemeral: true });
+      }
+      if (n === "3" && (hasTier3 || hasTier2 || hasTier1)) {
+        return i.reply({ content: "❌ У вас уже есть Tier 3 или выше!", ephemeral: true });
+      }
+      if (n === "2" && (hasTier2 || hasTier1)) {
+        return i.reply({ content: "❌ У вас уже есть Tier 2 или выше!", ephemeral: true });
+      }
+
+      // Проверка кулдауна на повышение (11 часов)
+      if (!db.tierCooldowns) db.tierCooldowns = {};
+      const lastUpgrade = db.tierCooldowns[i.user.id];
+      const cooldownMs = 11 * 60 * 60 * 1000;
+      if (lastUpgrade && (Date.now() - lastUpgrade < cooldownMs)) {
+        const remainingMs = cooldownMs - (Date.now() - lastUpgrade);
+        const hours = Math.floor(remainingMs / (1000 * 60 * 60));
+        const minutes = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
+        return i.reply({ content: `❌ Повышаться по ступеням можно раз в 11 часов! Осталось подождать: **${hours} ч. ${minutes} мин.**`, ephemeral: true });
+      }
 
       const modal = new ModalBuilder()
         .setCustomId(`TIERM${n}`)
@@ -715,9 +797,7 @@ client.on("interactionCreate", async i => {
       return i.reply({ content: "✅ Заявка на тир отправлена руководству!", ephemeral: true });
     }
 
-    /* ===================================================================
-       ===== СИСТЕМА ПОВЫШЕНИЯ РАНГА =====
-    =================================================================== */
+    /* ===== СИСТЕМА ПОВЫШЕНИЯ РАНГА ===== */
     if (i.isButton() && i.customId === "rankup_menu_btn") {
       let currentRank = 0;
       if (i.member.roles.cache.has(CONFIG.RANK_2_ROLE_ID)) currentRank = 2;
@@ -850,7 +930,7 @@ client.on("interactionCreate", async i => {
         .setCustomId(`RU_REJECTM.${uid}.${i.message.id}`)
         .setTitle("Причина отклонения");
       modal.addComponents(new ActionRowBuilder().addComponents(
-        new TextInputBuilder().setCustomId("reason").setLabel("Почему отклонено?").setStyle(TextInputStyle.Short).setRequired(true)
+        new TextInputBuilder().setCustomId("reason").setLabel("Why отклонено?").setStyle(TextInputStyle.Short).setRequired(true)
       ));
       return i.showModal(modal);
     }
@@ -869,9 +949,7 @@ client.on("interactionCreate", async i => {
       return i.reply({ content: "✅ Заявка отклонена.", ephemeral: true });
     }
 
-    /* ===================================================================
-       ===== МАГАЗИН =====
-    =================================================================== */
+    /* ===== МАГАЗИН ===== */
     if (i.isButton() && i.customId === "shop_btn") {
       const embed = new EmbedBuilder()
         .setTitle("🛒 МАГАЗИН META")
@@ -881,9 +959,7 @@ client.on("interactionCreate", async i => {
       return i.reply({ embeds: [embed], ephemeral: true });
     }
 
-    /* ===================================================================
-       ===== СИСТЕМА БАЛЛОВ (ЗАРАБОТОК) =====
-    =================================================================== */
+    /* ===== СИСТЕМА БАЛЛОВ (ЗАРАБОТОК) ===== */
     if (i.isButton() && i.customId === "earn_btn") {
       const sel = new StringSelectMenuBuilder()
         .setCustomId("earnsel")
@@ -905,7 +981,7 @@ client.on("interactionCreate", async i => {
     }
 
     if (i.isModalSubmit() && i.customId.startsWith("EARN.")) {
-      const key  = i.customId.replace("EARN.", "");
+      const key = i.customId.replace("EARN.", "");
       const task = EARN_OPTIONS.find(o => o.value === key);
       const pts  = parseInt(key.split("_")[1]);
       const log  = await i.guild.channels.fetch(CONFIG.MAIN_LOG_CHANNEL).catch(() => null);
@@ -948,9 +1024,7 @@ client.on("interactionCreate", async i => {
       return i.reply({ content: `🪙 Ваш текущий баланс: **${pts}** Мета Коинов.`, ephemeral: true });
     }
 
-    /* ===================================================================
-       ===== ЗАЯВКА В СЕМЬЮ =====
-    =================================================================== */
+    /* ===== ЗАЯВКА В СЕМЬЮ ===== */
     if (i.isButton() && i.customId === "apply_start") {
       const modal = new ModalBuilder().setCustomId("applyM").setTitle("Анкета в Meta Family");
       modal.addComponents(
@@ -997,9 +1071,7 @@ client.on("interactionCreate", async i => {
       return i.reply({ content: "✅ Ваша анкета успешно отправлена!", ephemeral: true });
     }
 
-    /* ===================================================================
-       ===== УПРАВЛЕНИЕ ЗАЯВКАМИ (КНОПКИ АДМИНИСТРАТОРОВ) =====
-    =================================================================== */
+    /* ===== УПРАВЛЕНИЕ ЗАЯВКАМИ (КНОПКИ АДМИНИСТРАТОРОВ) ===== */
     if (i.isButton() && i.customId.startsWith("ADMWATCH.")) {
       const emb = EmbedBuilder.from(i.message.embeds[0]);
       emb.setFields(emb.data.fields.map(f => f.name === "📊 Статус" ? { name: "📊 Статус", value: `👀 Проверяет: ${i.user.username}` } : f));
@@ -1013,7 +1085,17 @@ client.on("interactionCreate", async i => {
         await target.roles.remove(Object.values(CAPT_CONFIG.TIERS)).catch(() => {});
         const role = CAPT_CONFIG.TIERS[tierNum];
         if (role) await target.roles.add(role).catch(() => {});
-        target.send(`🎯 Руководство Meta одобрило тебе **Tier ${tierNum}**!`).catch(() => {});
+        
+        // Фиксируем время изменения тира для кулдауна (11 часов)
+        if (!db.tierCooldowns) db.tierCooldowns = {};
+        db.tierCooldowns[uid] = Date.now();
+        save();
+
+        let dmMessage = `🎯 Руководство Meta одобрило тебе **Tier ${tierNum}**!`;
+        if (tierNum === "1") {
+          dmMessage += "\nКрасава ты тир 1!";
+        }
+        target.send(dmMessage).catch(() => {});
       }
       const emb = EmbedBuilder.from(i.message.embeds[0]).setColor("Green");
       emb.setFields(emb.data.fields.map(f => f.name === "📊 Статус" ? { name: "📊 Статус", value: `✅ Одобрил ${i.user.username}` } : f));
@@ -1024,17 +1106,17 @@ client.on("interactionCreate", async i => {
       const uid = i.customId.split(".")[1];
       const target = await i.guild.members.fetch(uid).catch(() => null);
       if (target) {
+        // Принятие: Выдача 1-го ранга И Обязательной роли 1520503870420287578
         await target.roles.add(CONFIG.ROLE_ACCEPTED_ID).catch(() => {});
-        target.send("🎉 Поздравляем! Вы приняты в семью **Meta**! Вам выдан 1 ранг.").catch(() => {});
+        await target.roles.add("1520503870420287578").catch(() => {});
+        target.send("🎉 Поздравляем! Вы приняты в семью **Meta**! Вам выдан 1 ранг и обязательная роль.").catch(() => {});
       }
       
-      // Лог в отдельный канал без фото и эмбедов
       const plainLogChannel = await i.guild.channels.fetch("1520495201464881214").catch(() => null);
       if (plainLogChannel) {
         await plainLogChannel.send(`Администратор ${i.user} принял игрока <@${uid}>.`);
       }
 
-      // Трекинг принятых людей
       if (!db.accepts) db.accepts = {};
       if (!db.accepts[i.user.id]) db.accepts[i.user.id] = [];
       db.accepts[i.user.id].push(Date.now());
@@ -1045,19 +1127,70 @@ client.on("interactionCreate", async i => {
       return i.update({ embeds: [emb], components: [] });
     }
 
+    // ВЫЗОВ НА ОБЗВОН (ОТКРЫВАЕТ МЕНЮ ВЫБОРА КАНАЛОВ)
     if (i.isButton() && i.customId.startsWith("ADMCALL.")) {
       const uid = i.customId.split(".")[1];
+      
+      const menu = new StringSelectMenuBuilder()
+        .setCustomId(`CALL_CHAN_SEL.${uid}.${i.message.id}`)
+        .setPlaceholder("Выберите канал для приглашения рекрута")
+        .addOptions([
+          new StringSelectMenuOptionBuilder().setLabel("Голосовой канал 1").setValue("1520394576999747681"),
+          new StringSelectMenuOptionBuilder().setLabel("Голосовой канал 2").setValue("1520394576999747680"),
+          new StringSelectMenuOptionBuilder().setLabel("Голосовой канал 3").setValue("1520766809232506981"),
+          new StringSelectMenuOptionBuilder().setLabel("Голосовой канал 4").setValue("1520766839687217263")
+        ]);
+
+      return i.reply({
+        content: "👉 Выберите голосовой канал, в который нужно пригласить человека на обзвон:",
+        components: [new ActionRowBuilder().addComponents(menu)],
+        ephemeral: true
+      });
+    }
+
+    // ОБРАБОТКА ВЫБОРА КАНАЛА ДЛЯ ОБЗВОНА
+    if (i.isStringSelectMenu() && i.customId.startsWith("CALL_CHAN_SEL.")) {
+      const [, uid, mid] = i.customId.split(".");
+      const voiceChannelId = i.values[0];
+
       const target = await i.guild.members.fetch(uid).catch(() => null);
+      const origMsg = await i.channel.messages.fetch(mid).catch(() => null);
+
       await openInterviewChannels(i.guild, uid);
-      if (target) target.send(`📞 Вас вызвали на обзвон в семью **Meta**! Срочно зайдите в канал обзвона в течение 7 минут.`).catch(() => {});
-      const emb = EmbedBuilder.from(i.message.embeds[0]).setColor("Purple");
-      emb.setFields(emb.data.fields.map(f => f.name === "📊 Статус" ? { name: "📊 Статус", value: `📞 На обзвоне у ${i.user.username}` } : f));
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`ADMFAM.${uid}`).setLabel("✅ Принять").setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId(`ADMCALLOFF.${uid}`).setLabel("🔴 Закончить обзвон").setStyle(ButtonStyle.Danger),
-        new ButtonBuilder().setCustomId(`ADMNO.${uid}`).setLabel("❌ Отказать").setStyle(ButtonStyle.Danger)
-      );
-      return i.update({ embeds: [emb], components: [row] });
+
+      if (target) {
+        target.send(`📞 Ваша заявка взята на рассмотрение! Вас ожидают в голосовом канале семьи **Meta**: <#${voiceChannelId}>. Зайдите в течение 7 минут.`).catch(() => {});
+      }
+
+      // Автоматическое создание ветки с рекрутером и игроком
+      let thread = null;
+      if (i.channel.type === ChannelType.GuildText || i.channel.type === ChannelType.GuildNews) {
+        thread = await i.channel.threads.create({
+          name: `Обзвон - ${target ? target.user.username : uid}`,
+          autoArchiveDuration: 60,
+          reason: 'Обзвон кандидата'
+        }).catch(() => null);
+      }
+
+      if (thread) {
+        await thread.members.add(i.user.id).catch(() => {});
+        if (target) await thread.members.add(target.id).catch(() => {});
+        await thread.send(`👋 Приветствуем! В этой автоматической ветке проходит координация.\nКандидат: <@${uid}>\nРекрутер: ${i.user}\n👉 **Кандидату необходимо немедленно зайти в войс:** <#${voiceChannelId}>`);
+      }
+
+      // Обновляем исходную заявку в логах
+      if (origMsg) {
+        const emb = EmbedBuilder.from(origMsg.embeds[0]).setColor("Purple");
+        emb.setFields(emb.data.fields.map(f => f.name === "📊 Статус" ? { name: "📊 Статус", value: `📞 На обзвоне у ${i.user.username} (Канал: <#${voiceChannelId}>)` } : f));
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`ADMFAM.${uid}`).setLabel("✅ Принять").setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(`ADMCALLOFF.${uid}`).setLabel("🔴 Закончить обзвон").setStyle(ButtonStyle.Danger),
+          new ButtonBuilder().setCustomId(`ADMNO.${uid}`).setLabel("❌ Отказать").setStyle(ButtonStyle.Danger)
+        );
+        await origMsg.edit({ embeds: [emb], components: [row] }).catch(() => {});
+      }
+
+      return i.update({ content: `✅ Кандидат уведомлен. Создана ветка обзвона: ${thread ? `<#${thread.id}>` : "ошибка создания"}`, components: [] });
     }
 
     if (i.isButton() && i.customId.startsWith("ADMCALLOFF.")) {
@@ -1097,9 +1230,7 @@ client.on("interactionCreate", async i => {
       return i.reply({ content: "✅ Отказ оформлен.", ephemeral: true });
     }
 
-    /* ===================================================================
-       ===== КАПТ =====
-    =================================================================== */
+    /* ===== КАПТ ===== */
     const getTier = m => {
       if (!m || !m.roles) return "tier3";
       if (m.roles.cache.has(CAPT_CONFIG.TIERS["1"])) return "tier1";
@@ -1150,9 +1281,7 @@ client.on("interactionCreate", async i => {
       return i.reply({ content: "✅ Игрок удален из списков капта.", ephemeral: true });
     }
 
-    /* ===================================================================
-       ===== ОТЧЕТЫ =====
-    =================================================================== */
+    /* ===== ОТЧЕТЫ ===== */
     if (i.isButton() && i.customId === "WREPORTBTN") {
       const modal = new ModalBuilder().setCustomId("WREPORTM").setTitle("Еженедельный отчет");
       modal.addComponents(
@@ -1185,7 +1314,6 @@ client.on("interactionCreate", async i => {
       );
       await repCh.send({ embeds: [emb], components: [row] });
 
-      // Проверка нормы за последние 3 дня
       const threeDaysAgo = Date.now() - (3 * 24 * 60 * 60 * 1000);
       const userAccepts = (db.accepts && db.accepts[uid] ? db.accepts[uid] : []).filter(time => time >= threeDaysAgo).length;
 
@@ -1216,24 +1344,40 @@ client.on("interactionCreate", async i => {
       return i.update({ embeds: [emb], components: [] });
     }
 
-    /* ===================================================================
-       ===== AFK =====
-    =================================================================== */
+    /* ===== AFK ИСПРАВЛЕННАЯ СИСТЕМА ===== */
     if (i.isButton() && i.customId === "afk_on") {
-      const roles = i.member.roles.cache.filter(r => r.id !== i.guild.id).map(r => r.id);
-      afkdb.roles[i.user.id] = roles; saveAfk();
-      for (const r of roles) await i.member.roles.remove(r).catch(() => {});
+      const botHighestRole = i.guild.members.me.roles.highest;
+      
+      // Фильтруем роли: убираем @everyone, управляемые интеграциями (бусты, боты) и те, что выше бота
+      const rolesToRemove = i.member.roles.cache.filter(r => 
+        r.id !== i.guild.id && 
+        !r.managed && 
+        r.position < botHighestRole.position
+      ).map(r => r.id);
+
+      afkdb.roles[i.user.id] = rolesToRemove; 
+      saveAfk();
+
+      if (rolesToRemove.length > 0) {
+        await i.member.roles.remove(rolesToRemove).catch(() => {});
+      }
       await i.member.roles.add(CONFIG.VACATION_ROLE).catch(() => {});
       return i.reply({ content: "🌙 Вы ушли в AFK. Ваши роли временно сняты.", ephemeral: true });
     }
 
     if (i.isButton() && i.customId === "afk_off") {
       const saved = afkdb.roles[i.user.id];
-      if (!saved) return i.reply({ content: "❌ Вы не находились в AFK статусе.", ephemeral: true });
-      for (const r of saved) await i.member.roles.add(r).catch(() => {});
+      if (!saved || !Array.isArray(saved)) {
+        return i.reply({ content: "❌ Вы не находились в AFK статусе или ваши роли не были корректно сохранены.", ephemeral: true });
+      }
+      
+      // Возвращаем все сохраненные роли сразу
+      await i.member.roles.add(saved).catch(() => {});
       await i.member.roles.remove(CONFIG.VACATION_ROLE).catch(() => {});
-      delete afkdb.roles[i.user.id]; saveAfk();
-      return i.reply({ content: "✅ С возвращением! Все ваши роли возвращены.", ephemeral: true });
+      
+      delete afkdb.roles[i.user.id]; 
+      saveAfk();
+      return i.reply({ content: "✅ С возвращением! Все ваши роли успешно возвращены.", ephemeral: true });
     }
 
     if (i.isButton() && i.customId === "afk_vacation") {
@@ -1241,21 +1385,7 @@ client.on("interactionCreate", async i => {
     }
 
   } catch (e) {
-    console.error("❌ Критическая ошибка в обработке interaction:");
-    console.error(`   Тип: ${i.isChatInputCommand() ? `/${i.commandName}` : i.customId || "неизвестно"}`);
-    console.error(e);
-
-    let detail = e.message || String(e);
-    if (e.rawError) {
-      if (e.rawError.errors)   detail += " | " + JSON.stringify(e.rawError.errors);
-      else if (e.rawError.message) detail = e.rawError.message;
-    }
-
-    const errText = `❌ Что-то пошло не так: \`${detail}\``.slice(0, 1900);
-    if (!i.replied && !i.deferred)
-      await i.reply({ content: errText, ephemeral: true }).catch(() => {});
-    else if (i.deferred && !i.replied)
-      await i.editReply({ content: errText }).catch(() => {});
+    console.error("❌ Критическая ошибка в обработке interaction:", e);
   }
 });
 
@@ -1263,7 +1393,6 @@ client.on("interactionCreate", async i => {
 /* ==========================================================================
    ================= ВЕБ-СЕРВЕР И АДМИН-ПАНЕЛЬ УПРАВЛЕНИЯ ==================
    ========================================================================== */
-
 const app = express();
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
@@ -1294,31 +1423,26 @@ app.get("/", (req, res) => {
         <div class="container">
           <h1>⚙️ Панель Управления Ботом</h1>
           ${req.query.s ? '<div class="success">✅ Настройки успешно сохранены и применены в боте!</div>' : ''}
-          
           <form method="POST" action="/save">
-            
             <h2>🌍 Базовые настройки</h2>
             ${input("META_IMAGE", CONFIG.IMAGE, "Ссылка на картинку бота (Эмбеды)")}
             ${input("ADMIN_ROLES", CONFIG.ADMIN_ROLES.join(", "), "Роли Администраторов бота (ID через запятую)")}
-
             <h2>📂 Настройки ID Каналов</h2>
             ${input("COMMAND_CHANNEL_ID", CONFIG.COMMAND_CHANNEL_ID, "Канал Заявок")}
             ${input("MAIN_LOG_CHANNEL", CONFIG.MAIN_LOG_CHANNEL, "Главный канал Логов")}
             ${input("REPORT_LOG_CHANNEL", CONFIG.REPORT_LOG_CHANNEL, "Канал Логов Отчетов")}
             ${input("AFK_LOG_CHANNEL", CONFIG.AFK_LOG_CHANNEL, "Канал Логов AFK")}
             ${input("AFK_COMMAND_CHANNEL", CONFIG.AFK_COMMAND_CHANNEL, "Канал для команды /afk")}
-            ${input("NEWS_CHANNEL_ID", CONFIG.NEWS_CHANNEL_ID, "Канал Новостей")}
+            ${input("NEWS_CHANNEL_ID", CONFIG.NEWS_CHANNEL_ID, "Канал Новости")}
             ${input("TIER_CHANNEL_ID", CONFIG.TIER_CHANNEL_ID, "Канал Получения Тира")}
             ${input("POINTS_CHANNEL_ID", CONFIG.POINTS_CHANNEL_ID, "Канал Баллов")}
             ${input("RANKUP_LOG_CHANNEL", CONFIG.RANKUP_LOG_CHANNEL, "Канал Логов Повышений")}
             ${input("INTERVIEW_CHANNELS", CONFIG.INTERVIEW_CHANNELS.join(", "), "Каналы Обзвона (через запятую)")}
-
             <h2>⚔️ Настройки Каптов</h2>
             ${input("CAPT_CHANNEL_ID", CAPT_CONFIG.CHANNEL_ID, "Канал сбора на капт")}
             ${input("TIER_1_ROLE", CAPT_CONFIG.TIERS["1"], "Роль Tier 1")}
             ${input("TIER_2_ROLE", CAPT_CONFIG.TIERS["2"], "Роль Tier 2")}
             ${input("TIER_3_ROLE", CAPT_CONFIG.TIERS["3"], "Роль Tier 3")}
-
             <h2>🎭 Настройки ID Ролей</h2>
             ${input("ROLE_ACCEPTED_ID", CONFIG.ROLE_ACCEPTED_ID, "Роль 'Принят в семью' (1 ранг)")}
             ${input("RANK_2_ROLE_ID", CONFIG.RANK_2_ROLE_ID, "Роль 2 ранга")}
@@ -1326,7 +1450,6 @@ app.get("/", (req, res) => {
             ${input("VACATION_ROLE", CONFIG.VACATION_ROLE, "Роль Отпуска/AFK")}
             ${input("FINE_ROLE_1", CONFIG.FINE_ROLE_1, "Роль Штраф 1")}
             ${input("FINE_ROLE_2", CONFIG.FINE_ROLE_2, "Роль Штраф 2")}
-
             <button class="btn" type="submit">💾 СОХРАНИТЬ И ПРИМЕНИТЬ</button>
           </form>
         </div>
@@ -1337,12 +1460,9 @@ app.get("/", (req, res) => {
 
 app.post("/save", (req, res) => {
   const b = req.body;
-
-  // Обновление общих каналов и ролей
   CONFIG.IMAGE = b.META_IMAGE;
   CONFIG.TIER_IMAGE = b.META_IMAGE;
   CAPT_CONFIG.IMAGE_URL = b.META_IMAGE;
-
   CONFIG.COMMAND_CHANNEL_ID = b.COMMAND_CHANNEL_ID;
   CONFIG.MAIN_LOG_CHANNEL = b.MAIN_LOG_CHANNEL;
   CONFIG.REPORT_LOG_CHANNEL = b.REPORT_LOG_CHANNEL;
@@ -1352,26 +1472,20 @@ app.post("/save", (req, res) => {
   CONFIG.TIER_CHANNEL_ID = b.TIER_CHANNEL_ID;
   CONFIG.POINTS_CHANNEL_ID = b.POINTS_CHANNEL_ID;
   CONFIG.RANKUP_LOG_CHANNEL = b.RANKUP_LOG_CHANNEL;
-
   CONFIG.ROLE_ACCEPTED_ID = b.ROLE_ACCEPTED_ID;
   CONFIG.RANK_2_ROLE_ID = b.RANK_2_ROLE_ID;
   CONFIG.RANK_3_ROLE_ID = b.RANK_3_ROLE_ID;
   CONFIG.VACATION_ROLE = b.VACATION_ROLE;
   CONFIG.FINE_ROLE_1 = b.FINE_ROLE_1;
   CONFIG.FINE_ROLE_2 = b.FINE_ROLE_2;
-
   CAPT_CONFIG.CHANNEL_ID = b.CAPT_CHANNEL_ID;
   CAPT_CONFIG.TIERS["1"] = b.TIER_1_ROLE;
   CAPT_CONFIG.TIERS["2"] = b.TIER_2_ROLE;
   CAPT_CONFIG.TIERS["3"] = b.TIER_3_ROLE;
-
-  // Обновление массивов
   CONFIG.ADMIN_ROLES = b.ADMIN_ROLES.split(",").map(s => s.trim()).filter(s => s.length > 0);
   CONFIG.INTERVIEW_CHANNELS = b.INTERVIEW_CHANNELS.split(",").map(s => s.trim()).filter(s => s.length > 0);
 
-  // Сохраняем все в файл JSON
   saveWebConfig();
-
   console.log("⚙️ Настройки успешно обновлены через веб-панель!");
   res.redirect("/?s=1");
 });
